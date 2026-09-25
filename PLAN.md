@@ -8,21 +8,24 @@
 
 **Target hardware**: Intel Core Ultra 5 226V (Lunar Lake), 40 TOPS NPU ("Intel AI Boost"), Arc 130V iGPU.
 **Target runtime**: C/C++ (no Python), OpenVINO for NPU targeting, with CPU/GPU fallbacks.
-**Target UX**: Replicates the `shlok.asr` plugin/daemon architecture exactly — Quickshell bar panel + lightweight daemon with SIGUSR1 toggle + systemd user service + state files in `~/.local/share/studio-effects/state/`.
+**Target UX**: Quickshell bar panel + lightweight event-driven daemon — but **differs from `shlok.asr`**:
+- **No SIGUSR1/Copilot-key toggle**: effects auto-activate when mic/camera streams are active AND the effect is enabled in the panel
+- **Event-driven daemon**: sleeps in `select()` until woken by inotify (state file changes) or future PipeWire stream events — does NOT poll every 100ms
+- **Panel toggles per-effect ON/OFF**: noise suppression, blur, auto-framing, voice SR, image SR
+- **System ON/OFF**: managed by daemon start/stop (systemctl), not a panel toggle
 
 ---
 
-## 0. Architecture Summary (mirrors `shlok.asr` verbatim)
+## 0. Architecture Summary (auto-activation, differs from `shlok.asr`)
 
-| Piece | Path | Pattern copied from |
-|---|---|---|
-| Quickshell bar plugin | `~/.config/omarchy/plugins/shlok.studio/manifest.json` + `Panel.qml` + `Model.js` + `assets/*.svg` | `shlok.asr` — same `Panel { moduleName: "shlok.studio" }`, same `Process` + `StdioCollector` state-file polling, same `BarIconButton` + `KeyboardPanel` layout, same "POWERED BY [intel.svg]" credit row |
-| Floating popup | `~/.config/omarchy/plugins/shlok.studio-popup/RecorderPopup.qml` | `shlok.asr-popup/RecorderPopup.qml` — same `PanelWindow` on `WlrLayer.Overlay`, same 100ms/1200ms poll, same cancel-X via `cancel-requested` file |
-| Daemon | `~/.local/bin/studio-effects --daemon` (C++ binary) | `dictate.cpp` — single process, `SIGUSR1` toggle, 100ms `select()` poll loop, `write_state()` to `status.json`, fork-per-session |
-| Wrapper script | `~/.local/bin/omarchy-studio-effects {toggle\|start\|stop\|status}` | `omarchy-npu-dictate` — PID file, `kill -SIGUSR1`, daemon management |
-| Systemd unit | `~/.config/systemd/user/omarchy-studio-effects.service` | `omarchy-npu-dictate.service` — `ExecStart=%h/.local/bin/studio-effects --daemon`, `Environment=WAYLAND_DISPLAY=…`, `Environment=LD_LIBRARY_PATH=…` |
-| Hyprland bind | `~/.config/hypr/bindings.lua` — `o.bind("SUPER + SHIFT + code:201", "Studio", "omarchy-studio-effects toggle")` | same Copilot key reuse |
-| State contract | `~/.local/share/studio-effects/state/` | identical file layout: `enabled`, `device.txt`, `model.txt`, `status.json`, `offload`, `volume`, `devices.json`, `level`, `daemon.pid`, `cancel-requested` |
+| Piece | Path | Pattern from | Key difference |
+|---|---|---|---|
+| Quickshell bar plugin | `~/.config/omarchy/plugins/shlok.studio/manifest.json` + `Panel.qml` + `Model.js` + `assets/*.svg` | `shlok.asr` — same `Panel` + `BarIconButton` + `KeyboardPanel` layout, same `Process`/`StdioCollector` state-file polling | Per-effect toggles only, NO master ToggleSwitch. Badge shows ON/OFF status (not a toggle button) |
+| Floating popup | `~/.config/omarchy/plugins/shlok.studio-popup/RecorderPopup.qml` | `shlok.asr-popup/RecorderPopup.qml` — same `PanelWindow` overlay, same VU bar + cancel-X pattern | Fires on stream start/stop, not user tap |
+| Daemon | `~/.local/bin/studio-effects --daemon` (C++ binary) | `dictate.cpp` — same signal handlers, state writers, audio feedback (fork pattern) | No SIGUSR1 toggle. Event-driven: `inotify` on state dir + future PipeWire events. Sleeps until event arrives. |
+| Wrapper script | `~/.local/bin/omarchy-studio-effects {start\|stop\|status}` | `omarchy-npu-dictate` — PID file, daemon management | **No `toggle` mode** — effects auto-activate on stream activity |
+| Systemd unit | `~/.config/systemd/user/omarchy-studio-effects.service` | `omarchy-npu-dictate.service` — same `ExecStart`, `Environment` | Same pattern, daemon is always-on |
+| State contract | `~/.local/share/studio-effects/state/` | Same file layout as `shlok.asr` state files | Same: `enabled`, `device.txt`, `effect_*`, `status.json`, `offload`, `volume`, `level`, `daemon.pid`, `cancel-requested` |
 
 ---
 
@@ -437,11 +440,11 @@ Audio effects (noise suppression, AudioSR) can't be visually inspected — they 
 
 ~/.config/hypr/bindings.lua
 ├── (unbind SUPER+SHIFT+code:201 from Dictate)
-└── o.bind("SUPER + SHIFT + code:201", "Studio", "omarchy-studio-effects toggle")
+└── o.bind("SUPER + SHIFT + code:201", "Studio", "omarchy-studio-effects start")  ← opens panel, NOT toggle
 
 ~/.local/bin/
-├── studio-effects              ← compiled C++ daemon
-├── omarchy-studio-effects    ← wrapper script (copy from omarchy-npu-dictate, rename)
+├── studio-effects              ← compiled C++ daemon (event-driven, auto-activation)
+├── omarchy-studio-effects    ← wrapper script (start/stop/status only, no toggle)
 └── v4l2loopback-ctl           ← helper to modprobe/create /dev/video10
 
 ~/.config/systemd/user/

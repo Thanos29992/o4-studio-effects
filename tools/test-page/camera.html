@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Studio Effects Test</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #d4d4d4; }
+    body { font-family: ui-monospace, Consolas, monospace; display: flex; flex-direction: column; align-items: center; }
+    h1 { margin: 12px 0; font-size: 18px; }
+    .split { display: flex; gap: 4px; padding: 4px; height: calc(100vh - 80px); }
+    .split video { width: 50%; height: 100%; object-fit: contain; background: #2d2d2d; }
+    .split video.raw { border: 2px solid #444; }
+    .split video.processed { border: 2px solid #007acc; }
+    .label { position: absolute; top: 4px; left: 8px; background: rgba(0,0,0,0.7); padding: 2px 8px; border-radius: 3px; font-size: 13px; }
+    .container { position: relative; }
+  </style>
+</head>
+<body>
+  <h1>Studio Effects Test</h1>
+  <div class="split">
+    <div class="container">
+      <span class="label">Raw Webcam</span>
+      <video id="raw" autoplay playsinline></video>
+    </div>
+    <div class="container">
+      <span class="label">Processed (/dev/video10)</span>
+      <video id="processed" autoplay playsinline></video>
+    </div>
+  </div>
+  <script>
+    async function setup() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+      // Show all video devices
+      const processed = document.getElementById('processed');
+      const raw = document.getElementById('raw');
+
+      // Try to get /dev/video10 (v4l2loopback) first, then fall back to default
+      let processedSource = null;
+      for (const d of videoDevices) {
+        if (d.label.includes('video10') || d.label.toLowerCase().includes('loopback')) {
+          processedSource = d;
+          break;
+        }
+      }
+      if (!processedSource && videoDevices.length > 1) {
+        processedSource = videoDevices[1];
+      }
+      if (!processedSource) processedSource = videoDevices[0];
+
+      // Raw is always the first camera
+      if (videoDevices.length > 0) {
+        raw.srcObject = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: videoDevices[0].deviceId }
+        });
+      }
+
+      // Processed from v4l2loopback
+      if (processedSource) {
+        try {
+          processed.srcObject = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: processedSource.deviceId }
+          });
+        } catch (e) {
+          processed.src = 'data:,'; // show blank if not available
+          console.warn('Could not access processed video source:', e);
+        }
+      }
+    }
+
+    setup().catch(e => console.error(e));
+  </script>
+</body>
+</html>

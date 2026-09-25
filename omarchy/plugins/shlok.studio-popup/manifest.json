@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "shlok.studio-popup",
+  "name": "Studio Effects Popup",
+  "version": "1.0.0",
+  "author": "Custom on Omarchy",
+  "description": "Floating popup for Studio Effects: live status + VU bar + cancel",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "RecorderPopup.qml"
+  },
+  "barWidget": {
+    "displayName": "",
+    "description": "Studio Effects popup (hidden from bar).",
+    "category": "Status",
+    "allowMultiple": false
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "shlok.studio",
+  "name": "Studio Effects",
+  "version": "1.0.0",
+  "author": "Custom on Omarchy — Intel NPU Studio Effects",
+  "description": "Audio/video effects on Intel NPU/GPU/CPU: noise suppression, background blur, auto-framing, voice SR, image upscaling",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Studio Effects",
+    "description": "Audio/video effects: enable/disable, choose inference device, select effect model.",
+    "category": "Input",
+    "allowMultiple": false
+  }
+}
