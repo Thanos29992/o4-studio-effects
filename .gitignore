@@ -1,0 +1,30 @@
+# Runtime state files (never commit — machine-local)
+state/*
+!state/*.sample
+*.pid
+*.wav
+test_raw.wav
+test_processed.wav
+capture*.wav
+enhanced.wav
+daemon.pid
+cancel-requested
+
+# NPU compile cache (gigabytes of blobs)
+cache/
+*.blob
+
+# Build artifacts
+studio-effects
+*.o
+*.so
+*.a
+
+# Environment-specific (not portable)
+*.service
+~/.config/hypr/bindings.lua
+
+# OS cruft
+.DS_Store
+Thumbs.db
+*~

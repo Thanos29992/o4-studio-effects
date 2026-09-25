@@ -1,0 +1,2 @@
+# Model IR files (.xml/.bin) are downloaded at runtime, not committed.
+# Each model has a corresponding .md file with download URL + checksum + input shape.
