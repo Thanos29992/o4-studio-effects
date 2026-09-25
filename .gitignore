@@ -6,13 +6,16 @@ state/effect_*
 state/blur_strength
 state/audiosr_preset
 state/realesrgan_q
-state/audio_source
+state/audio_source.txt
 state/volume
 state/offload
 state/level
 state/status.json
 state/studio-effects.pid
 state/cancel-requested
+state/.gitkeep
+
+# Keep templates
 !state/*.sample
 
 # Cache blobs (13GB+)
