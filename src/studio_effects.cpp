@@ -130,12 +130,28 @@ static double volume_to_gain(double slider) {
 
 // ─── State writers ─────────────────────────────────────────────────────────
 
+static void install_sigchld_ignore() {
+    // Ignore SIGCHLD so forked children from play_sound_async auto-reap
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = SIG_IGN;
+    sa.sa_flags = SA_NOCLDWAIT;
+    sigaction(SIGCHLD, &sa, nullptr);
+}
+
+static void signal_waybar() {
+    // Waybar polls status.json every ~2s — no need to signal it explicitly.
+    // The panel's StdioCollector processes handle refreshing when state changes.
+    // No-op: the daemon just writes state.json and Waybar picks it up on its
+    // own polling cycle (same as shlok.asr's non-SIGUSR1 path).
+}
+
 static void write_state(const std::string& cls, const std::string& path) {
     if (path.empty()) return;
     std::ofstream f(path);
     f << "{\"alt\":\"" << cls << "\",\"class\":\"" << cls << "\",\"tooltip\":\"\"}\n";
     f.flush();
-    system("pkill -RTMIN+8 waybar 2>/dev/null");
+    signal_waybar();
 }
 
 static void write_state_full(const std::string& cls, const std::string& path,
@@ -147,7 +163,7 @@ static void write_state_full(const std::string& cls, const std::string& path,
     if (since > 0) f << ",\"since\":" << since;
     f << "}\n";
     f.flush();
-    system("pkill -RTMIN+8 waybar 2>/dev/null");
+    signal_waybar();
 }
 
 static bool cancel_requested() {
@@ -275,6 +291,9 @@ static void run_daemon() {
     sh.sa_handler = on_sighup;
     sigaction(SIGHUP, &sh, nullptr);
 
+    // Ignore SIGCHLD to auto-reap forked children (play_sound_async, signal_waybar)
+    install_sigchld_ignore();
+
     // Set up inotify for state file changes
     int inotify_fd = inotify_init1(IN_NONBLOCK);
     if (inotify_fd < 0) {
@@ -341,7 +360,13 @@ static void run_daemon() {
         tv.tv_sec = 30;
         tv.tv_usec = 0;
 
-        int ret = select(max_fd + 1, &rfds, nullptr, nullptr, &tv);
+        int ret;
+        if (max_fd > 0) {
+            ret = select(max_fd + 1, &rfds, nullptr, nullptr, &tv);
+        } else {
+            // No fds to watch — just sleep
+            ret = select(0, nullptr, nullptr, nullptr, &tv);
+        }
 
         if (g_should_exit.load()) break;
 
@@ -379,9 +404,10 @@ static void run_daemon() {
 
         bool ns_on   = read_effect("deepfilternet3");
         bool blur_on = read_effect("modnet");
-        bool af_on   = read_effect("face-adas");
-        bool vsr_on  = read_effect("audiosr-speech");
-        bool isr_on  = read_effect("realesrgan-x4");
+        // af_on, vsr_on, isr_on are read but pipelines not yet active (Phase 4-5)
+        (void)read_effect("face-adas");
+        (void)read_effect("audiosr-speech");
+        (void)read_effect("realesrgan-x4");
 
         // --- Audio pipeline (DeepFilterNet3) ---
         bool mic_active = mic_in_use();
@@ -454,11 +480,18 @@ static void run_daemon() {
         }
         was_video_active = (g_video_pipeline != nullptr);
 
-        // Update status
-        if (was_audio_active || was_video_active) {
-            write_state_full("recording", g_state_file, false, time(nullptr));
-        } else if (enabled) {
-            write_state("idle", g_state_file);
+        // Update status (only write when state changes)
+        static std::string prev_status = "";
+        std::string current_status =
+            (was_audio_active || was_video_active) ? "recording" :
+            (enabled ? "idle" : "idle");
+        if (current_status != prev_status) {
+            if (current_status == "recording") {
+                write_state_full("recording", g_state_file, false, time(nullptr));
+            } else {
+                write_state("idle", g_state_file);
+            }
+            prev_status = current_status;
         }
     }
 
