@@ -24,7 +24,7 @@ A reimplementation of Windows Studio Effects for Linux, built on OpenVINO and Pi
 
 The system has two parts:
 
-1. **Daemon** (`studio-effects --daemon`) — Event-driven, low-power. Sleeps until woken by:
+1. **Daemon** (`studio-effects --daemon`) — Event-driven, low-power (~0.1% CPU when idle). Sleeps in `select()` until woken by:
    - Inotify events (panel toggles an effect ON/OFF)
    - PipeWire stream events (camera/mic starts/stops — Phase 2+)
 
