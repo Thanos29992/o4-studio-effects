@@ -14,9 +14,12 @@
 //   - State files in ~/.local/share/studio-effects/state/
 //
 // Phase 1: Event-driven daemon skeleton + inotify on state files + signal handling.
-// No models or PipeWire stream detection yet (Phase 2 will add both).
+// Phase 2: DeepFilterNet3 audio noise suppression pipeline
+// Phase 3: MODNet video background blur pipeline
 // The daemon sleeps until woken, so it consumes near-zero CPU when idle.
 //
+#include "audio_pipeline.hpp"
+#include "video_pipeline.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -43,6 +46,7 @@
 static std::string STATE_DIR  = "/home/shlok/.local/share/studio-effects/state";
 static std::string CACHE_DIR  = "/home/shlok/.local/share/studio-effects/cache";
 static std::string SOUND_DIR  = "/home/shlok/.local/share/studio-effects/sounds";
+static std::string MODELS_DIR = "/home/shlok/.local/share/studio-effects/models";
 
 // ─── Daemon state ──────────────────────────────────────────────────────────
 static std::atomic<bool> g_should_exit{false};
@@ -52,6 +56,10 @@ static std::string g_state_file;
 static std::string g_pid_file;
 static std::string g_cancel_file;
 static std::string g_level_file;
+
+// ─── Pipeline instances (Phase 2+) ───────────────────────────────────────────
+static std::unique_ptr<AudioPipeline> g_audio_pipeline;
+static std::unique_ptr<VideoPipeline> g_video_pipeline;
 
 // ─── Signal handlers ───────────────────────────────────────────────────────
 
@@ -303,13 +311,15 @@ static void run_daemon() {
     fprintf(stderr, "[studio] Event-driven: sleeping until state change or stream event\n");
     fflush(stderr);
 
-    bool was_effects_active = false;
+    bool was_audio_active = false;
+    bool was_video_active = false;
 
     // Main event loop: sleep until woken by inotify or signal
     for (;;) {
         if (g_should_exit.load()) break;
         if (g_reload.exchange(false)) {
             fprintf(stderr, "[studio] reload signal received\n"); fflush(stderr);
+            // Re-read offload setting, reload models if needed
         }
 
         // Build fd_set for select
@@ -353,36 +363,110 @@ static void run_daemon() {
 
         // Re-read state from files
         bool enabled = read_enabled();
+        if (!enabled) {
+            // System disabled — unload all pipelines
+            if (was_audio_active || was_video_active) {
+                if (g_audio_pipeline) g_audio_pipeline->stop();
+                if (g_video_pipeline) {}  // video stop is implicit
+                g_audio_pipeline = nullptr;
+                g_video_pipeline = nullptr;
+                was_audio_active = false;
+                was_video_active = false;
+                write_state("idle", g_state_file);
+            }
+            continue;
+        }
+
         bool ns_on   = read_effect("deepfilternet3");
         bool blur_on = read_effect("modnet");
         bool af_on   = read_effect("face-adas");
         bool vsr_on  = read_effect("audiosr-speech");
         bool isr_on  = read_effect("realesrgan-x4");
 
-        // Determine what's active
-        bool effects_enabled = enabled && (ns_on || blur_on || af_on || vsr_on || isr_on);
-        bool cam_active = effects_enabled && camera_in_use();
-        bool mic_active = effects_enabled && mic_in_use();
-        bool effects_active = cam_active || mic_active;
+        // --- Audio pipeline (DeepFilterNet3) ---
+        bool mic_active = mic_in_use();
+        if (ns_on && mic_active) {
+            if (!g_audio_pipeline) {
+                // Initialize audio pipeline
+                std::string audio_src = read_state_str("audio_source", "@DEFAULT_AUDIO_SOURCE@");
+                std::string model_dir = MODELS_DIR + "/deepfilternet3";
+                g_audio_pipeline = std::make_unique<AudioPipeline>();
+                if (g_audio_pipeline->init(model_dir, audio_src)) {
+                    g_audio_pipeline->start();
+                    if (!was_audio_active) {
+                        play_start_sound();
+                        fprintf(stderr, "[studio] audio: DeepFilterNet3 active on mic\n");
+                        fflush(stderr);
+                    }
+                } else {
+                    g_audio_pipeline = nullptr;
+                    fprintf(stderr, "[studio] audio: pipeline init failed\n");
+                    fflush(stderr);
+                }
+            }
+        } else {
+            // Mic not in use, or noise suppression disabled
+            if (g_audio_pipeline) {
+                g_audio_pipeline->stop();
+                g_audio_pipeline = nullptr;
+                if (was_audio_active) {
+                    play_stop_sound();
+                    fprintf(stderr, "[studio] audio: DeepFilterNet3 stopped\n");
+                    fflush(stderr);
+                }
+            }
+        }
+        was_audio_active = (g_audio_pipeline && g_audio_pipeline->is_running());
 
-        if (effects_active && !was_effects_active) {
-            // Effects just turned on (stream started)
-            fprintf(stderr, "[studio] stream active, processing effects...\n"); fflush(stderr);
-            play_start_sound();
+        // --- Video pipeline (MODNet background blur) ---
+        bool cam_active = camera_in_use();
+        if (blur_on && cam_active) {
+            if (!g_video_pipeline) {
+                // Initialize video pipeline
+                VideoPipeline::Config vcfg;
+                vcfg.model_dir    = MODELS_DIR + "/modnet";
+                vcfg.blur_strength = std::stof(read_state_str("blur_strength", "50"));
+                vcfg.bg_image_path  = read_state_str("bg_image_path", "");
+
+                g_video_pipeline = std::make_unique<VideoPipeline>();
+                if (g_video_pipeline->init(vcfg)) {
+                    if (!was_video_active) {
+                        play_start_sound();
+                        fprintf(stderr, "[studio] video: MODNet blur active on camera\n");
+                        fflush(stderr);
+                    }
+                } else {
+                    g_video_pipeline = nullptr;
+                    fprintf(stderr, "[studio] video: pipeline init failed\n");
+                    fflush(stderr);
+                }
+            }
+        } else {
+            // Camera not in use, or blur disabled
+            if (g_video_pipeline) {
+                g_video_pipeline = nullptr;
+                if (was_video_active) {
+                    play_stop_sound();
+                    fprintf(stderr, "[studio] video: MODNet blur stopped\n");
+                    fflush(stderr);
+                }
+            }
+        }
+        was_video_active = (g_video_pipeline != nullptr);
+
+        // Update status
+        if (was_audio_active || was_video_active) {
             write_state_full("recording", g_state_file, false, time(nullptr));
-        } else if (!effects_active && was_effects_active) {
-            // Effects just stopped (stream ended)
-            fprintf(stderr, "[studio] stream ended, unloading effects...\n"); fflush(stderr);
-            play_stop_sound();
+        } else if (enabled) {
             write_state("idle", g_state_file);
         }
-
-        was_effects_active = effects_active;
     }
 
     // Cleanup
     if (inotify_fd >= 0) close(inotify_fd);
     if (pipewire_fd >= 0) close(pipewire_fd);
+    g_audio_pipeline = nullptr;
+    g_video_pipeline = nullptr;
     ::unlink(g_pid_file.c_str());
     write_state("idle", g_state_file);
     fprintf(stderr, "[studio] daemon shutting down\n");

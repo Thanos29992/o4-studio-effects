@@ -54,8 +54,8 @@ public:
             window_[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (frame_size_ - 1)));
         }
         // FFTW plans
-        fft_plan_  = fftwf_plan_dft_r2c_1d(frame_size_,  fft_in_.data(),  (fftwf_complex*)fft_out_.data(),  FFTW_MEASURE);
-        ifft_plan_ = fftwf_plan_dft_c2r_1d(frame_size_, (fftwf_complex*)ifft_in_.data(), ifft_out_.data(), FFTW_MEASURE);
+        fft_plan_  = fftwf_plan_dft_r2c_1d(frame_size_,  fft_in_.data(),  reinterpret_cast<fftwf_complex*>(fft_out_.data()),  FFTW_MEASURE);
+        ifft_plan_ = fftwf_plan_dft_c2r_1d(frame_size_, reinterpret_cast<fftwf_complex*>(ifft_in_.data()), ifft_out_.data(), FFTW_MEASURE);
     }
 
     ~STFTProcessor() {
@@ -72,8 +72,8 @@ public:
         fftwf_execute(fft_plan_);
 
         for (int i = 0; i < n_bins; i++) {
-            float real = fft_out_[i][0];
-            float imag = fft_out_[i][1];
+            float real = fft_out_[i].real();
+            float imag = fft_out_[i].imag();
             mag[i]   = sqrtf(real * real + imag * imag);
             phase[i] = atan2f(imag, real);
         }
@@ -84,13 +84,12 @@ public:
         for (int i = 0; i < n_bins; i++) {
             float r = mag[i];
             float p = phase[i];
-            ifft_in_[i][0] = r * cosf(p);
-            ifft_in_[i][1] = r * sinf(p);
+            ifft_in_[i].real(r * cosf(p));
+            ifft_in_[i].imag(r * sinf(p));
         }
         // Zero out remaining bins (if n_bins < DF_N_BANDS)
         for (int i = n_bins; i < DF_N_BANDS; i++) {
-            ifft_in_[i][0] = 0.0f;
-            ifft_in_[i][1] = 0.0f;
+            ifft_in_[i] = std::complex<float>(0.0f, 0.0f);
         }
 
         fftwf_execute(ifft_plan_);
@@ -112,8 +111,8 @@ private:
     std::vector<std::complex<float>> fft_out_;  // complex interleaved
     std::vector<std::complex<float>> ifft_in_;
     std::vector<float> ifft_out_;
-    fftwf_plan_t fft_plan_;
-    fftwf_plan_t ifft_plan_;
+    fftwf_plan fft_plan_;
+    fftwf_plan ifft_plan_;
 };
 
 // ─── DeepFilterNet3 Inference Engine ───────────────────────────────────────
@@ -126,38 +125,27 @@ public:
     // Load 3 OpenVINO IR models for NPU
     bool init(const std::string& model_dir, const std::string& device = "NPU") {
         try {
-            // Three separate Core instances for NPU + GPU simultaneous
-            // (DeepFilterNet3 is CPU-bound on NPU, but we use separate cores
-            //  to allow GPU effects to run alongside)
             ov::Core core("deepfilternet3-engine");
 
-            // Configure for NPU (stateless per-frame, low batch)
-            ov::AnyMap npu_config;
-            npu_config["NPU_DEVICE"] = "4TB";
-            npu_config["MODEL_CACHING"];  // enable cache
+            // Enable model caching for faster reloads
+            core.set_property(ov::cache_path("/tmp/studio-effects-ov-cache"));
 
-            // enc: [1, 3002, 32]
+            // enc: [1, 3002, 32] — ERB encoder
             enc_ = std::make_unique<ov::CompiledModel>(
-                core.compile_model(model_dir + "/enc.xml", device, npu_config));
-            enc_infer_  = enc_->get_request();
-            enc_output_ = enc_infer_.get_tensor("output_enc");  // name TBD
+                core.compile_model(model_dir + "/enc.xml", device));
+            enc_infer_ = enc_->create_infer_request();
 
-            // erb_dec: [1, 3002, 96]
+            // erb_dec: [1, 3002, 96] — ERB decoder
             erb_dec_ = std::make_unique<ov::CompiledModel>(
-                core.compile_model(model_dir + "/erb_dec.xml", device, npu_config));
-            erb_infer_ = erb_dec_->get_request();
+                core.compile_model(model_dir + "/erb_dec.xml", device));
+            erb_infer_ = erb_dec_->create_infer_request();
 
-            // df_dec: [1, 3002, 96]
+            // df_dec: [1, 3002, 96] — DF decoder
             df_dec_ = std::make_unique<ov::CompiledModel>(
-                core.compile_model(model_dir + "/df_dec.xml", device, npu_config));
-            df_infer_ = df_dec_->get_request();
+                core.compile_model(model_dir + "/df_dec.xml", device));
+            df_infer_ = df_dec_->create_infer_request();
 
-            // Static reshape BEFORE compile_model("NPU") — NPU requires fixed shape
-            // The models above are pre-compiled with fixed shapes, so compile_model
-            // already has them baked in.
-
-            fprintf(stderr, "[dfnet3] loaded models: enc=%s erb_dec=%s df_dec=%s\n",
-                    model_dir.c_str(), model_dir.c_str(), model_dir.c_str());
+            fprintf(stderr, "[dfnet3] loaded models (%s)\n", device.c_str());
             return true;
         } catch (const std::exception& e) {
             fprintf(stderr, "[dfnet3] ERROR loading models: %s\n", e.what());
@@ -166,29 +154,16 @@ public:
     }
 
     // Process one audio frame through DeepFilterNet3
-    // Input:  complex spectrogram [n_bins] (magnitude from STFT)
-    // Output: complex spectrogram [n_bins] (magnitude after noise suppression)
     void process_frame(const float* spec_mag_in, float* spec_mag_out, int n_bins = DF_ERB_BANDS) {
-        // Step 1: ERB encoder (converts spec to ERB domain)
-        // enc takes [1, 3002, 32] — we need to accumulate frames
-        // For per-frame processing (Phase 2 simplified): use single-frame shape
-        auto enc_input = enc_infer_.get_tensor("input_enc");
-        // Fill with ERB features from spec_mag_in...
-
-        // Step 2: ERB decoder — reconstruct ERB-domain output
-        auto erb_output = erb_infer_.get_tensor("output_erb");
-
-        // Step 3: DF decoder — apply spectral floor (noise suppression)
-        auto df_output = df_infer_.get_tensor("output_df");
-
-        // Copy result
+        // Phase 2: implement ERB transform → enc → erb_dec → df_dec → ISTFT
+        // Simplified passthrough for now
         for (int i = 0; i < n_bins; i++) {
-            spec_mag_out[i] = spec_mag_in[i];  // simplified — Phase 2 will implement
+            spec_mag_out[i] = spec_mag_in[i];
         }
 
-        enc_infer_.  infer();
-        erb_infer_.  infer();
-        df_infer_.   infer();
+        enc_infer_.infer();
+        erb_infer_.infer();
+        df_infer_.infer();
     }
 
     bool is_loaded() const { return enc_ != nullptr; }
@@ -202,8 +177,6 @@ private:
     ov::InferRequest enc_infer_;
     ov::InferRequest erb_infer_;
     ov::InferRequest df_infer_;
-
-    ov::Tensor enc_output_;
 };
 
 // ─── Full audio pipeline: PipeWire capture → DF3 → virtual sink ────────────
