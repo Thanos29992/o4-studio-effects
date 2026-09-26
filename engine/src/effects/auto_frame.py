@@ -173,13 +173,15 @@ class AutoFrameEffect(BaseEffect):
             return
         self._outside_streak = 0
 
-        # poll-rate temporal filter: detector boxes jitter a few % between
-        # polls; take 60% of each measurement so accepted targets glide instead
-        # of stepping — this is what kills wobble while zooming.
-        beta = 0.6
-        self._target_center_x += beta * (target_cx - self._target_center_x)
-        self._target_center_y += beta * (target_cy - self._target_center_y)
-        self._target_face_size += beta * (target_size - self._target_face_size)
+        # accepted move: snap the target ONTO the detection so the face ends
+        # up at the ABSOLUTE CENTER of the hold box. (A partial 60% approach
+        # used to stop as soon as the face was merely inside the zone, which
+        # parked it off-center near the edge.) Motion still feels smooth
+        # because the displayed pose glides here per-frame — only the
+        # target lands exact.
+        self._target_center_x = target_cx
+        self._target_center_y = target_cy
+        self._target_face_size = target_size
 
     def _ease_toward_target(self) -> None:
         """Glide the displayed pose toward the target every frame.
