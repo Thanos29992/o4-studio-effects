@@ -43,10 +43,12 @@ EFFECT_MAP = {
 AF_PARAMS = {
     "smoothing":  ("smoothing_factor",     float, 0.01, 0.5,  "af_smoothing"),
     "zoom":       ("zoom_margin",          float, 1.0,  3.0,  "af_zoom"),
-    "interval":   ("detection_interval",   int,   1,    15,   "af_interval"),
+    "interval":   ("detection_interval",   float, 0.2,  3.0,  "af_interval"),
     "confidence": ("confidence_threshold", float, 0.1,  0.9,  "af_confidence"),
     "headroom":   ("headroom",             float, 0.0,  0.5,  "af_headroom"),
     "transition": ("transition_speed",     float, 0.01, 0.2,  "af_transition"),
+    "deadzone":   ("deadzone",             float, 0.0,  0.3,  "af_deadzone"),
+    "szdeadzone": ("size_deadzone",        float, 0.0,  0.5,  "af_szdeadzone"),
 }
 
 # JS/CSS assets are inlined in camera.html; nothing else to serve.

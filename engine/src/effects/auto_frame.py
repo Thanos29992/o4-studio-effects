@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 import cv2
@@ -36,7 +37,14 @@ class AutoFrameEffect(BaseEffect):
         self._compiled_model: ov.CompiledModel | None = None
         self._infer_request: ov.InferRequest | None = None
         self._input_shape: tuple[int, ...] = ()
-        self._frame_count = 0
+        # detection cadence is time-based: poll the face model once per
+        # config.detection_interval seconds (not every frame)
+        self._last_detect = 0.0
+        # last detected pose (updated at poll rate) vs displayed pose
+        # (eased toward target every frame -> continuous smooth glide)
+        self._target_center_x = 0.5
+        self._target_center_y = 0.5
+        self._target_face_size = 0.15
         self._smooth_center_x = 0.5
         self._smooth_center_y = 0.5
         self._smooth_face_size = 0.15
@@ -95,7 +103,8 @@ class AutoFrameEffect(BaseEffect):
 
         return faces
 
-    def _update_smooth_target(self, faces: list[tuple[float, float, float, float]]) -> None:
+    def _update_target(self, faces: list[tuple[float, float, float, float]]) -> None:
+        """Store the latest detection as the target pose (runs at poll rate)."""
         if not faces:
             return
 
@@ -112,9 +121,10 @@ class AutoFrameEffect(BaseEffect):
         target_size = max(x_max - x_min, y_max - y_min)
 
         if not self._initialized:
-            self._smooth_center_x = target_cx
-            self._smooth_center_y = target_cy
-            self._smooth_face_size = target_size
+            # first sighting: start both target and displayed pose together
+            self._target_center_x = self._smooth_center_x = target_cx
+            self._target_center_y = self._smooth_center_y = target_cy
+            self._target_face_size = self._smooth_face_size = target_size
             self._initialized = True
             logger.info(
                 "Face detected: center=(%.2f, %.2f) size=%.3f",
@@ -122,10 +132,30 @@ class AutoFrameEffect(BaseEffect):
             )
             return
 
+        # deadzone: drift inside the tolerance band means "still centered /
+        # still same distance" -> hold the current pose (no micro-corrections,
+        # no wobble). Only a genuine reposition moves the target.
+        rel_size = abs(target_size - self._target_face_size) / max(self._target_face_size, 1e-3)
+        within_center = abs(target_cx - self._target_center_x) < self.config.deadzone and \
+                        abs(target_cy - self._target_center_y) < self.config.deadzone
+        within_size = rel_size < self.config.size_deadzone
+        if within_center and within_size:
+            return
+
+        self._target_center_x = target_cx
+        self._target_center_y = target_cy
+        self._target_face_size = target_size
+
+    def _ease_toward_target(self) -> None:
+        """Glide the displayed pose toward the target every frame.
+
+        Detection may poll once a second, but motion is eased per-frame,
+        so the crop drifts smoothly instead of jumping at each detection.
+        """
         alpha = self.config.smoothing_factor
-        self._smooth_center_x += alpha * (target_cx - self._smooth_center_x)
-        self._smooth_center_y += alpha * (target_cy - self._smooth_center_y)
-        self._smooth_face_size += alpha * 0.5 * (target_size - self._smooth_face_size)
+        self._smooth_center_x += alpha * (self._target_center_x - self._smooth_center_x)
+        self._smooth_center_y += alpha * (self._target_center_y - self._smooth_center_y)
+        self._smooth_face_size += alpha * 0.5 * (self._target_face_size - self._smooth_face_size)
 
     @BaseEffect.enabled.setter
     def enabled(self, value: bool) -> None:
@@ -145,10 +175,15 @@ class AutoFrameEffect(BaseEffect):
             return frame
 
         if self._enabled:
-            self._frame_count += 1
-            if self._frame_count % self.config.detection_interval == 0:
+            # poll the face model at the configured cadence (default: 1s)
+            now = time.monotonic()
+            if now - self._last_detect >= self.config.detection_interval:
+                self._last_detect = now
                 faces = self._detect_faces(frame)
-                self._update_smooth_target(faces)
+                self._update_target(faces)
+            # ease the crop toward the target every frame -> smooth motion
+            if self._initialized:
+                self._ease_toward_target()
 
         return self._apply_crop(frame)
 

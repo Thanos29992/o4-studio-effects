@@ -163,7 +163,7 @@
           <input type="range" min="0.01" max="0.5" step="0.01" id="afSmoothing"
                  oninput="$('afSmoothingVal').textContent=this.value"
                  onchange="setAF('smoothing', this.value)">
-          <div class="hint">lower = calm drift · higher = snappy follow</div>
+          <div class="hint">lower = slow graceful glide · higher = quicker settle</div>
         </div>
         <div class="rng-row">
           <label>Zoom margin <b id="afZoomVal">2.2</b></label>
@@ -173,11 +173,11 @@
           <div class="hint">lower = tighter crop · higher = wider shot</div>
         </div>
         <div class="rng-row">
-          <label>Detect every <b id="afIntervalVal">1</b> fr</label>
-          <input type="range" min="1" max="15" step="1" id="afInterval"
-                 oninput="$('afIntervalVal').textContent=this.value"
+          <label>Detect every <b id="afIntervalVal">1.0</b> s</label>
+          <input type="range" min="0.2" max="3" step="0.1" id="afInterval"
+                 oninput="$('afIntervalVal').textContent=Number(this.value).toFixed(1)"
                  onchange="setAF('interval', this.value)">
-          <div class="hint">higher = less CPU · laggier tracking</div>
+          <div class="hint">CPU poll rate — 1s keeps CPU idle, motion unaffected</div>
         </div>
         <div class="rng-row">
           <label>Face confidence <b id="afConfidenceVal">0.50</b></label>
@@ -199,6 +199,20 @@
                  oninput="$('afTransitionVal').textContent=this.value"
                  onchange="setAF('transition', this.value)">
           <div class="hint">zoom in/out fade speed on toggle</div>
+        </div>
+        <div class="rng-row">
+          <label>Center deadzone <b id="afDeadzoneVal">0.08</b></label>
+          <input type="range" min="0" max="0.3" step="0.01" id="afDeadzone"
+                 oninput="$('afDeadzoneVal').textContent=this.value"
+                 onchange="setAF('deadzone', this.value)">
+          <div class="hint">how far off-center before it re-centers · higher = "you're fine"</div>
+        </div>
+        <div class="rng-row">
+          <label>Zoom deadzone <b id="afSzDzVal">0.15</b></label>
+          <input type="range" min="0" max="0.5" step="0.01" id="afSzDz"
+                 oninput="$('afSzDzVal').textContent=this.value"
+                 onchange="setAF('szdeadzone', this.value)">
+          <div class="hint">forward/back tolerance · higher = ignores small leans</div>
         </div>
       </div>
       <div class="hint">All knobs apply live and survive restarts. Say the values you like and they get locked as defaults.</div>
@@ -323,10 +337,12 @@ async function poll() {
     const rows = [
       ['afSmoothing', 'afSmoothingVal', af.smoothing, 2],
       ['afZoom', 'afZoomVal', af.zoom, 2],
-      ['afInterval', 'afIntervalVal', af.interval, 0],
+      ['afInterval', 'afIntervalVal', af.interval, 1],
       ['afConfidence', 'afConfidenceVal', af.confidence, 2],
       ['afHeadroom', 'afHeadroomVal', af.headroom, 2],
       ['afTransition', 'afTransitionVal', af.transition, 2],
+      ['afDeadzone', 'afDeadzoneVal', af.deadzone, 2],
+      ['afSzDz', 'afSzDzVal', af.szdeadzone, 2],
     ];
     for (const [id, valId, v, dp] of rows) {
       if ($(id) != document.activeElement) $(id).value = v;

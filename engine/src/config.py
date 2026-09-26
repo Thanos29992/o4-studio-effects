@@ -43,10 +43,12 @@ class AutoFrameConfig:
     enabled: bool = False
     zoom_margin: float = 1.3
     smoothing_factor: float = 0.15
-    detection_interval: int = 3
+    detection_interval: float = 1.0  # seconds between face detections (CPU poll rate)
     confidence_threshold: float = 0.5
     headroom: float = 0.18
     transition_speed: float = 0.05
+    deadzone: float = 0.08  # face center within this radius of held pose -> hold (no recenter)
+    size_deadzone: float = 0.15  # relative face-size change below this -> hold (no zoom)
 
 
 @dataclass
