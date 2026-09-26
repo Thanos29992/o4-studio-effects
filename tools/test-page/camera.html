@@ -157,13 +157,18 @@
 
     <div class="card">
       <h2>Auto-Framing Tuning <span class="tag">TEMPORARY</span></h2>
+      <div class="toggle-row" style="border-bottom:1px solid #262626;padding-top:0">
+        <span class="name">Guides on RAW<small>HOLD = don't-move zone · CROP = what's taken · FACE = detector</small></span>
+        <label class="switch"><input type="checkbox" id="tgGuides" checked
+               onchange="setFeeds(power)"><span class="slider"></span></label>
+      </div>
       <div class="af-grid">
         <div class="rng-row">
-          <label>Smoothing <b id="afSmoothingVal">0.04</b></label>
-          <input type="range" min="0.01" max="0.5" step="0.01" id="afSmoothing"
-                 oninput="$('afSmoothingVal').textContent=this.value"
+          <label>Smoothing <b id="afSmoothingVal">0.040</b></label>
+          <input type="range" min="0.005" max="0.5" step="0.005" id="afSmoothing"
+                 oninput="$('afSmoothingVal').textContent=Number(this.value).toFixed(3)"
                  onchange="setAF('smoothing', this.value)">
-          <div class="hint">lower = slow graceful glide · higher = quicker settle</div>
+          <div class="hint">lower = slower graceful glide (0.005 ≈ 10s to settle) · higher = quicker</div>
         </div>
         <div class="rng-row">
           <label>Zoom margin <b id="afZoomVal">2.2</b></label>
@@ -174,10 +179,10 @@
         </div>
         <div class="rng-row">
           <label>Detect every <b id="afIntervalVal">1.0</b> s</label>
-          <input type="range" min="0.2" max="3" step="0.1" id="afInterval"
+          <input type="range" min="0.2" max="10" step="0.1" id="afInterval"
                  oninput="$('afIntervalVal').textContent=Number(this.value).toFixed(1)"
                  onchange="setAF('interval', this.value)">
-          <div class="hint">CPU poll rate — 1s keeps CPU idle, motion unaffected</div>
+          <div class="hint">CPU poll rate — 0.2–10s · motion stays smooth either way</div>
         </div>
         <div class="rng-row">
           <label>Face confidence <b id="afConfidenceVal">0.50</b></label>
@@ -294,7 +299,7 @@ function setBgImage() {
 function setFeeds(on) {
   const raw = $('rawFeed'), proc = $('procFeed');
   if (on) {
-    const bust = '?t=' + Date.now();
+    const bust = '?t=' + Date.now() + '&guides=' + ($('tgGuides').checked ? 1 : 0);
     raw.src = '/stream/raw.mjpg' + bust;
     proc.src = '/stream/processed.mjpg' + bust;
     raw.style.display = proc.style.display = 'block';
@@ -335,7 +340,7 @@ async function poll() {
   const af = s.autoframe;
   if (af) {
     const rows = [
-      ['afSmoothing', 'afSmoothingVal', af.smoothing, 2],
+      ['afSmoothing', 'afSmoothingVal', af.smoothing, 3],
       ['afZoom', 'afZoomVal', af.zoom, 2],
       ['afInterval', 'afIntervalVal', af.interval, 1],
       ['afConfidence', 'afConfidenceVal', af.confidence, 2],

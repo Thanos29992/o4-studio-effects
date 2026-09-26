@@ -51,6 +51,9 @@ class AutoFrameEffect(BaseEffect):
         self._initialized = False
         self._zoom_level = 1.0 if config.enabled else 0.0
         self._transitioning = False
+        # latest RAW detection bbox (for guides) and last computed crop rectangle
+        self._last_raw_face: tuple[float, float, float, float] | None = None
+        self._last_crop: tuple[int, int, int, int] | None = None
 
     def setup(self) -> None:
         self._download_model_if_needed()
@@ -106,6 +109,7 @@ class AutoFrameEffect(BaseEffect):
     def _update_target(self, faces: list[tuple[float, float, float, float]]) -> None:
         """Store the latest detection as the target pose (runs at poll rate)."""
         if not faces:
+            self._last_raw_face = None
             return
 
         if len(faces) == 1:
@@ -119,6 +123,7 @@ class AutoFrameEffect(BaseEffect):
         target_cx = (x_min + x_max) / 2.0
         target_cy = (y_min + y_max) / 2.0
         target_size = max(x_max - x_min, y_max - y_min)
+        self._last_raw_face = (x_min, y_min, x_max, y_max)  # exact bbox for guides
 
         if not self._initialized:
             # first sighting: start both target and displayed pose together
@@ -142,9 +147,13 @@ class AutoFrameEffect(BaseEffect):
         if within_center and within_size:
             return
 
-        self._target_center_x = target_cx
-        self._target_center_y = target_cy
-        self._target_face_size = target_size
+        # poll-rate temporal filter: detector boxes jitter a few % between
+        # polls; take 60% of each measurement so accepted targets glide instead
+        # of stepping — this is what kills wobble while zooming.
+        beta = 0.6
+        self._target_center_x += beta * (target_cx - self._target_center_x)
+        self._target_center_y += beta * (target_cy - self._target_center_y)
+        self._target_face_size += beta * (target_size - self._target_face_size)
 
     def _ease_toward_target(self) -> None:
         """Glide the displayed pose toward the target every frame.
@@ -216,16 +225,18 @@ class AutoFrameEffect(BaseEffect):
         center_x_px = frame_width / 2 + self._zoom_level * (target_cx - frame_width / 2)
         center_y_px = frame_height / 2 + self._zoom_level * (target_cy - frame_height / 2)
 
-        x1 = int(np.clip(center_x_px - crop_w_px / 2, 0, frame_width - crop_w_px))
-        y1 = int(np.clip(center_y_px - crop_h_px / 2, 0, frame_height - crop_h_px))
+        x1 = int(round(float(np.clip(center_x_px - crop_w_px / 2, 0, frame_width - crop_w_px))))
+        y1 = int(round(float(np.clip(center_y_px - crop_h_px / 2, 0, frame_height - crop_h_px))))
 
         if y1 > face_top - face_height_px * 0.2:
-            y1 = int(max(0, face_top - face_height_px * 0.2))
+            y1 = int(round(max(0.0, face_top - face_height_px * 0.2)))
         if y1 + crop_h_px < face_bottom + face_height_px * 0.1:
-            y1 = int(max(0, face_bottom + face_height_px * 0.1 - crop_h_px))
+            y1 = int(round(max(0.0, face_bottom + face_height_px * 0.1 - crop_h_px)))
 
-        x2 = int(min(x1 + crop_w_px, frame_width))
-        y2 = int(min(y1 + crop_h_px, frame_height))
+        x2 = int(round(min(x1 + crop_w_px, float(frame_width))))
+        y2 = int(round(min(y1 + crop_h_px, float(frame_height))))
+
+        self._last_crop = (x1, y1, x2 - x1, y2 - y1)
 
         cropped = frame[y1:y2, x1:x2]
 
@@ -233,6 +244,17 @@ class AutoFrameEffect(BaseEffect):
             return frame
 
         return cv2.resize(cropped, (frame_width, frame_height))
+
+    def overlay_info(self) -> dict | None:
+        """Geometry for the web-console guide overlay (raw view only)."""
+        if not self._enabled:
+            return None
+        return {
+            "target": (self._target_center_x, self._target_center_y, self._target_face_size),
+            "raw_face": self._last_raw_face,
+            "crop": self._last_crop,
+            "deadzone": self.config.deadzone,
+        }
 
     def cleanup(self) -> None:
         self._infer_request = None

@@ -41,9 +41,9 @@ EFFECT_MAP = {
 
 # auto-framing tunables: query key -> (config attr, caster, min, max, state file)
 AF_PARAMS = {
-    "smoothing":  ("smoothing_factor",     float, 0.01, 0.5,  "af_smoothing"),
+    "smoothing":  ("smoothing_factor",     float, 0.005, 0.5, "af_smoothing"),
     "zoom":       ("zoom_margin",          float, 1.0,  3.0,  "af_zoom"),
-    "interval":   ("detection_interval",   float, 0.2,  3.0,  "af_interval"),
+    "interval":   ("detection_interval",   float, 0.2,  10.0, "af_interval"),
     "confidence": ("confidence_threshold", float, 0.1,  0.9,  "af_confidence"),
     "headroom":   ("headroom",             float, 0.0,  0.5,  "af_headroom"),
     "transition": ("transition_speed",     float, 0.01, 0.2,  "af_transition"),
@@ -315,6 +315,17 @@ class EngineController:
             "camera": power,
         }
 
+    def af_overlay(self) -> dict | None:
+        """Auto-frame guide geometry for the raw web stream (copied frames)."""
+        with self._lock:
+            pipeline = self._pipeline
+            if pipeline is None:
+                return None
+            for effect in pipeline.get_effects():
+                if type(effect).__name__ == "AutoFrameEffect":
+                    return effect.overlay_info()
+        return None
+
     # ── frames for MJPEG ─────────────────────────────────────────────────
 
     def frames(self, kind: str):
@@ -336,7 +347,44 @@ class EngineController:
 _controller = EngineController()
 
 
-def _mjpeg_response(handler: BaseHTTPRequestHandler, kind: str) -> None:
+def _draw_guides(frame, info: dict):
+    """Draw hold-zone / crop / face guides on a COPY of the raw frame.
+
+    Web-console only — pipeline frames (virtual camera) are never touched.
+    """
+    img = frame.copy()
+    h, w = img.shape[:2]
+    dz = float(info.get("deadzone", 0.08))
+
+    tx, ty, ts = info.get("target", (0.5, 0.5, 0.15))
+    hx1 = max(0, int(round((tx - dz) * w)))
+    hy1 = max(0, int(round((ty - dz) * h)))
+    hx2 = min(w, int(round((tx + dz) * w)))
+    hy2 = min(h, int(round((ty + dz) * h)))
+    cv2.rectangle(img, (hx1, hy1), (hx2, hy2), (0, 255, 0), 2)
+    cv2.putText(img, "HOLD", (hx1, max(14, hy1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
+
+    crop = info.get("crop")
+    if crop and crop[2] > 4 and crop[3] > 4:
+        cx, cy, cw, ch = crop
+        cv2.rectangle(img, (cx, cy), (cx + cw, cy + ch), (0, 165, 255), 2)
+        cv2.putText(img, "CROP", (cx + 4, min(h - 6, cy + ch - 6)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1, cv2.LINE_AA)
+
+    raw_face = info.get("raw_face")
+    if raw_face:
+        x_min, y_min, x_max, y_max = raw_face
+        bx1, by1 = int(round(x_min * w)), int(round(y_min * h))
+        bx2, by2 = int(round(x_max * w)), int(round(y_max * h))
+        cv2.rectangle(img, (bx1, by1), (bx2, by2), (255, 255, 0), 1)
+        cv2.putText(img, "FACE", (bx1, min(h - 6, by2 + 14)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1, cv2.LINE_AA)
+
+    return img
+
+
+def _mjpeg_response(handler: BaseHTTPRequestHandler, kind: str, guides: bool = False) -> None:
     handler.send_response(200)
     handler.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
     handler.send_header("Cache-Control", "no-cache")
@@ -346,6 +394,10 @@ def _mjpeg_response(handler: BaseHTTPRequestHandler, kind: str) -> None:
             frame = raw if kind == "raw" else processed
             if frame is None:
                 continue
+            if guides and kind == "raw":
+                info = _controller.af_overlay()
+                if info:
+                    frame = _draw_guides(frame, info)
             ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if not ok:
                 continue
@@ -391,7 +443,8 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/api/status":
             self._json(_controller.status())
         elif path == "/stream/raw.mjpg":
-            _mjpeg_response(self, "raw")
+            guides = self._query().get("guides", ["1"])[0] != "0"
+            _mjpeg_response(self, "raw", guides=guides)
         elif path == "/stream/processed.mjpg":
             _mjpeg_response(self, "processed")
         else:
