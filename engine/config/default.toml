@@ -18,6 +18,10 @@ enabled = false
 mode = "blur"  # "blur", "replace", "none"
 blur_strength = 51
 background_image = ""
+matte_feather = 5  # odd kernel px for edge feather (1 = off)
+matte_floor = 0.05  # alpha below this -> full background (kills edge bleed)
+matte_gamma = 1.0  # >1 tightens matte (less halo), <1 fattens subject
+matte_temporal = 0.5  # EMA weight of previous mask (higher = steadier, laggier)
 
 # SLOW preset values (see config/presets/slow.toml)
 [effects.auto_frame]

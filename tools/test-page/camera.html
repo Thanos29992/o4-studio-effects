@@ -165,7 +165,7 @@
     </div>
 
     <div class="card">
-      <h2>Auto-Framing Tuning <span class="tag">TEMPORARY</span></h2>
+      <h2>Auto-Framing</h2>
       <div class="toggle-row" style="border-bottom:1px solid #262626;padding-top:0">
         <span class="name">Guides on RAW<small>HOLD = don't-move zone · CROP = what's taken · FACE = detector</small></span>
         <label class="switch"><input type="checkbox" id="tgGuides" checked
@@ -178,62 +178,39 @@
           <button class="pbtn" onclick="setAF('preset','fast').then(poll)">FAST</button>
         </span>
       </div>
+      <div class="hint" id="afSummary">—</div>
+    </div>
+
+    <div class="card">
+      <h2>Background Tuning <span class="tag">TEMPORARY</span></h2>
       <div class="af-grid">
         <div class="rng-row">
-          <label>Smoothing <b id="afSmoothingVal">0.040</b></label>
-          <input type="range" min="0.005" max="2" step="0.005" id="afSmoothing"
-                 oninput="$('afSmoothingVal').textContent=Number(this.value).toFixed(3)"
-                 onchange="setAF('smoothing', this.value)">
-          <div class="hint">lower = slower graceful glide · higher = quicker · eases out to a soft landing</div>
+          <label>Edge feather <b id="bgFeatherVal">5</b> px</label>
+          <input type="range" min="1" max="15" step="2" id="bgFeather"
+                 oninput="$('bgFeatherVal').textContent=this.value"
+                 onchange="setBG('feather', this.value)">
+          <div class="hint">matte boundary softness · 1 = crisp edge · higher = softer hair blend</div>
         </div>
         <div class="rng-row">
-          <label>Zoom margin <b id="afZoomVal">2.2</b></label>
-          <input type="range" min="1" max="3" step="0.05" id="afZoom"
-                 oninput="$('afZoomVal').textContent=this.value"
-                 onchange="setAF('zoom', this.value)">
-          <div class="hint">lower = tighter crop · higher = wider shot</div>
+          <label>Matte floor <b id="bgFloorVal">0.05</b></label>
+          <input type="range" min="0" max="0.35" step="0.01" id="bgFloor"
+                 oninput="$('bgFloorVal').textContent=Number(this.value).toFixed(2)"
+                 onchange="setBG('floor', this.value)">
+          <div class="hint">alpha below this = background · higher kills edge bleed</div>
         </div>
         <div class="rng-row">
-          <label>Detect every <b id="afIntervalVal">1.0</b> s</label>
-          <input type="range" min="0.1" max="10" step="0.1" id="afInterval"
-                 oninput="$('afIntervalVal').textContent=Number(this.value).toFixed(1)"
-                 onchange="setAF('interval', this.value)">
-          <div class="hint">NPU poll rate — 0.1–10s · motion stays smooth either way</div>
+          <label>Matte gamma <b id="bgGammaVal">1.00</b></label>
+          <input type="range" min="0.5" max="2" step="0.05" id="bgGamma"
+                 oninput="$('bgGammaVal').textContent=Number(this.value).toFixed(2)"
+                 onchange="setBG('gamma', this.value)">
+          <div class="hint">&lt;1 = fatter subject · &gt;1 = tighter matte (less halo)</div>
         </div>
         <div class="rng-row">
-          <label>Face confidence <b id="afConfidenceVal">0.50</b></label>
-          <input type="range" min="0.1" max="0.9" step="0.05" id="afConfidence"
-                 oninput="$('afConfidenceVal').textContent=this.value"
-                 onchange="setAF('confidence', this.value)">
-          <div class="hint">lower = locks on easily · higher = fewer false locks</div>
-        </div>
-        <div class="rng-row">
-          <label>Headroom <b id="afHeadroomVal">0.18</b></label>
-          <input type="range" min="0" max="0.5" step="0.01" id="afHeadroom"
-                 oninput="$('afHeadroomVal').textContent=this.value"
-                 onchange="setAF('headroom', this.value)">
-          <div class="hint">empty space above your head in frame</div>
-        </div>
-        <div class="rng-row">
-          <label>Transition <b id="afTransitionVal">0.05</b></label>
-          <input type="range" min="0.01" max="1" step="0.01" id="afTransition"
-                 oninput="$('afTransitionVal').textContent=this.value"
-                 onchange="setAF('transition', this.value)">
-          <div class="hint">zoom in/out fade speed on toggle</div>
-        </div>
-        <div class="rng-row">
-          <label>Center deadzone <b id="afDeadzoneVal">0.08</b></label>
-          <input type="range" min="0" max="0.3" step="0.01" id="afDeadzone"
-                 oninput="$('afDeadzoneVal').textContent=this.value"
-                 onchange="setAF('deadzone', this.value)">
-          <div class="hint">portrait (3:4) hold box · slider = box height · sit inside to hold</div>
-        </div>
-        <div class="rng-row">
-          <label>Zoom deadzone <b id="afSzDzVal">0.15</b></label>
-          <input type="range" min="0" max="0.5" step="0.01" id="afSzDz"
-                 oninput="$('afSzDzVal').textContent=this.value"
-                 onchange="setAF('szdeadzone', this.value)">
-          <div class="hint">forward/back tolerance · higher = ignores small leans</div>
+          <label>Temporal <b id="bgTemporalVal">0.50</b></label>
+          <input type="range" min="0" max="0.95" step="0.05" id="bgTemporal"
+                 oninput="$('bgTemporalVal').textContent=Number(this.value).toFixed(2)"
+                 onchange="setBG('temporal', this.value)">
+          <div class="hint">edge smoothing over time · higher = steadier but laggier</div>
         </div>
       </div>
       <div class="hint">All knobs apply live and survive restarts. Say the values you like and they get locked as defaults.</div>
@@ -305,6 +282,7 @@ function setEffect(name, on) { api(`/api/effect?name=${name}&state=${on ? 'on' :
 function setMode(m) { api('/api/mode?value=' + m, 'POST').then(poll); }
 function setBlur(v) { api('/api/blur?value=' + v, 'POST'); }
 function setAF(k, v) { return api('/api/autoframe?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); return r; }); }
+function setBG(k, v) { return api('/api/bgparam?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); return r; }); }
 function setBgImage() {
   const p = $('bgImagePath').value.trim();
   if (p) api('/api/bgimage?path=' + encodeURIComponent(p), 'POST').then(r => {
@@ -355,15 +333,19 @@ async function poll() {
 
   const af = s.autoframe;
   if (af) {
+    $('afSummary').textContent =
+      `smoothing ${+af.smoothing} · zoom ${+af.zoom} · detect ${+af.interval}s · ` +
+      `confidence ${+af.confidence} · headroom ${+af.headroom} · transition ${+af.transition} · ` +
+      `deadzone ${+af.deadzone} · zoom-dz ${+af.szdeadzone}`;
+  }
+
+  const bgp = s.bgparam;
+  if (bgp) {
     const rows = [
-      ['afSmoothing', 'afSmoothingVal', af.smoothing, 3],
-      ['afZoom', 'afZoomVal', af.zoom, 2],
-      ['afInterval', 'afIntervalVal', af.interval, 1],
-      ['afConfidence', 'afConfidenceVal', af.confidence, 2],
-      ['afHeadroom', 'afHeadroomVal', af.headroom, 2],
-      ['afTransition', 'afTransitionVal', af.transition, 2],
-      ['afDeadzone', 'afDeadzoneVal', af.deadzone, 2],
-      ['afSzDz', 'afSzDzVal', af.szdeadzone, 2],
+      ['bgFeather', 'bgFeatherVal', bgp.feather, 0],
+      ['bgFloor', 'bgFloorVal', bgp.floor, 2],
+      ['bgGamma', 'bgGammaVal', bgp.gamma, 2],
+      ['bgTemporal', 'bgTemporalVal', bgp.temporal, 2],
     ];
     for (const [id, valId, v, dp] of rows) {
       if ($(id) != document.activeElement) $(id).value = v;

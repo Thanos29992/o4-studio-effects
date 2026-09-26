@@ -90,13 +90,26 @@ class BackgroundEffect(BaseEffect):
         if alpha.shape != (frame_height, frame_width):
             alpha = cv2.resize(alpha, (frame_width, frame_height), interpolation=cv2.INTER_LINEAR)
 
-        # gentle feather + floor: kills background bleed without eating hair tips
-        alpha = cv2.GaussianBlur(alpha, (5, 5), 0)
-        alpha = np.clip((alpha - 0.05) / 0.9, 0.0, 1.0).astype(np.float32)
+        # edge feather: softens the matte boundary (odd kernel, 1 = off)
+        k = int(self.config.matte_feather)
+        if k >= 3:
+            if k % 2 == 0:
+                k += 1
+            alpha = cv2.GaussianBlur(alpha, (k, k), 0)
 
-        # light EMA on top of RVM's recurrence (resets if resolution changes)
+        # floor: alpha below this becomes full background (kills edge bleed)
+        floor = float(self.config.matte_floor)
+        alpha = np.clip((alpha - floor) / 0.9, 0.0, 1.0).astype(np.float32)
+
+        # gamma: >1 tightens the matte (less halo), <1 fattens the subject
+        gamma = float(self.config.matte_gamma)
+        if gamma != 1.0:
+            alpha = np.power(alpha, gamma).astype(np.float32)
+
+        # temporal EMA on top of RVM's recurrence (resets if resolution changes)
+        t = float(np.clip(self.config.matte_temporal, 0.0, 0.95))
         if self._prev_alpha is not None and self._prev_alpha.shape == alpha.shape:
-            alpha = 0.5 * alpha + 0.5 * self._prev_alpha
+            alpha = (1.0 - t) * alpha + t * self._prev_alpha
         self._prev_alpha = alpha
 
         return alpha

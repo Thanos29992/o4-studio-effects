@@ -36,6 +36,11 @@ class BackgroundConfig:
     mode: Literal["blur", "replace", "none"] = "blur"
     blur_strength: int = 51
     background_image: str = ""
+    # matte tuning (temporary console sliders, state files bg_*)
+    matte_feather: int = 5      # odd kernel px for edge feather (1 = off)
+    matte_floor: float = 0.05   # alpha below this -> full background
+    matte_gamma: float = 1.0    # >1 tightens matte, <1 fattens subject
+    matte_temporal: float = 0.5 # EMA weight of previous mask (edge stability)
 
 
 @dataclass

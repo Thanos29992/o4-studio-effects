@@ -5,6 +5,7 @@ state/model.txt
 state/effect_*
 state/blur_strength
 state/af_*
+state/bg_*
 state/bg_mode
 state/bg_image_path
 state/audiosr_preset

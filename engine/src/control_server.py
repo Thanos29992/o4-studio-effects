@@ -51,6 +51,14 @@ AF_PARAMS = {
     "szdeadzone": ("size_deadzone",        float, 0.0,  0.5,  "af_szdeadzone"),
 }
 
+# background matte tunables (temporary console sliders): same tuple layout
+BG_PARAMS = {
+    "feather":  ("matte_feather",  int,   1,    15, "bg_feather"),
+    "floor":    ("matte_floor",    float, 0.0,  0.35, "bg_floor"),
+    "gamma":    ("matte_gamma",    float, 0.5,  2.0,  "bg_gamma"),
+    "temporal": ("matte_temporal", float, 0.0,  0.95, "bg_temporal"),
+}
+
 # JS/CSS assets are inlined in camera.html; nothing else to serve.
 
 
@@ -152,6 +160,16 @@ class EngineController:
                 except ValueError:
                     pass
 
+        # background matte tunables
+        bg = config.effects.background
+        for attr, caster, lo, hi, state_name in BG_PARAMS.values():
+            raw = _read_state(state_name, "")
+            if raw:
+                try:
+                    setattr(bg, attr, max(lo, min(hi, caster(raw))))
+                except ValueError:
+                    pass
+
     def set_effect(self, name: str, enabled: bool) -> dict:
         suffix = EFFECT_MAP.get(name, "__invalid__")
         if suffix == "__invalid__":
@@ -233,6 +251,38 @@ class EngineController:
         af = preset.get("autoframe", {})
         return {k: str(v) for k, v in af.items() if k in AF_PARAMS}
 
+    def set_bg_params(self, params: dict[str, str]) -> dict:
+        """Update background matte tunables (any subset of BG_PARAMS keys).
+
+        Same contract as set_autoframe: clamp, persist to state/, apply live.
+        """
+        applied: dict[str, float | int] = {}
+        unknown = [k for k in params if k not in BG_PARAMS]
+        for key, raw in params.items():
+            spec = BG_PARAMS.get(key)
+            if spec is None:
+                continue
+            attr, caster, lo, hi, state_name = spec
+            try:
+                value = caster(float(raw))
+            except ValueError:
+                continue
+            if caster is int:
+                value = int(value)
+            value = max(lo, min(hi, value))
+            _write_state(state_name, str(value))
+            applied[key] = value
+            with self._lock:
+                pipeline = self._pipeline
+                if pipeline is not None:
+                    for effect in pipeline.get_effects():
+                        if type(effect).__name__ == "BackgroundEffect":
+                            setattr(effect.config, attr, value)
+        out: dict = {"ok": bool(applied), "applied": applied}
+        if unknown:
+            out["unknown"] = unknown
+        return out
+
     def set_blur(self, value: int) -> dict:
         value = max(1, min(99, value))
         _write_state("blur_strength", str(value))
@@ -305,6 +355,7 @@ class EngineController:
             fps = None
             mode = None
             af_live = None
+            bg_live = None
             if pipeline is not None:
                 for effect in pipeline.get_effects():
                     key = {"BackgroundEffect": "background",
@@ -313,6 +364,10 @@ class EngineController:
                         effects_state[key] = bool(effect.enabled)
                     if type(effect).__name__ == "BackgroundEffect":
                         mode = effect.config.mode
+                        bg_live = {
+                            web_key: getattr(effect.config, attr)
+                            for web_key, (attr, *_rest) in BG_PARAMS.items()
+                        }
                     if type(effect).__name__ == "AutoFrameEffect":
                         af_live = {
                             web_key: getattr(effect.config, attr)
@@ -330,17 +385,24 @@ class EngineController:
         if af_live is None:
             # powered off: report state-file values (fall back to config defaults)
             from src.config import load_config
-            af_cfg = load_config().effects.auto_frame
-            for attr, caster, lo, hi, state_name in AF_PARAMS.values():
-                raw = _read_state(state_name, "")
-                if raw:
-                    try:
-                        setattr(af_cfg, attr, max(lo, min(hi, caster(raw))))
-                    except ValueError:
-                        pass
+            cfg = load_config()
+            af_cfg = cfg.effects.auto_frame
+            bg_cfg = cfg.effects.background
+            for params, target in ((AF_PARAMS, af_cfg), (BG_PARAMS, bg_cfg)):
+                for attr, caster, lo, hi, state_name in params.values():
+                    raw = _read_state(state_name, "")
+                    if raw:
+                        try:
+                            setattr(target, attr, max(lo, min(hi, caster(raw))))
+                        except ValueError:
+                            pass
             af_live = {
                 web_key: getattr(af_cfg, attr)
                 for web_key, (attr, *_rest) in AF_PARAMS.items()
+            }
+            bg_live = {
+                web_key: getattr(bg_cfg, attr)
+                for web_key, (attr, *_rest) in BG_PARAMS.items()
             }
 
         proc = psutil.Process()
@@ -350,6 +412,7 @@ class EngineController:
             "blur": int(_read_state("blur_strength", "50") or 50),
             "mode": mode or _read_state("bg_mode", "blur"),
             "autoframe": af_live,
+            "bgparam": bg_live,
             "fps": round(fps, 1) if fps else None,
             "npu_percent": self._npu_percent(),
             "cpu_percent": round(proc.cpu_percent(interval=0.0) / (os.cpu_count() or 1), 1),
@@ -516,6 +579,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(_controller.set_effect(name, state == "on"))
         elif parsed.path == "/api/autoframe":
             self._json(_controller.set_autoframe(q))
+        elif parsed.path == "/api/bgparam":
+            self._json(_controller.set_bg_params(q))
         elif parsed.path == "/api/blur":
             try:
                 value = int(q.get("value", ""))
