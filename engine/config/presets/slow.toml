@@ -1,0 +1,13 @@
+# SLOW — gentle follow, low NPU (face detect ~1% at 1s poll).
+# Applied as the default; load anytime via POST /api/autoframe?preset=slow
+name = "slow"
+
+[autoframe]
+smoothing = 0.075
+zoom = 3.0
+interval = 1.0
+confidence = 0.85
+headroom = 0.24
+transition = 0.25
+deadzone = 0.22
+szdeadzone = 0.15

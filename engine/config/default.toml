@@ -19,13 +19,14 @@ mode = "blur"  # "blur", "replace", "none"
 blur_strength = 51
 background_image = ""
 
+# SLOW preset values (see config/presets/slow.toml)
 [effects.auto_frame]
 enabled = true
-zoom_margin = 2.55
-smoothing_factor = 0.1  # per-frame ease toward detected face (lower = slower glide)
-detection_interval = 0.2  # seconds between face detections (NPU poll rate)
+zoom_margin = 3.0
+smoothing_factor = 0.075  # per-frame ease toward detected face (lower = slower glide)
+detection_interval = 1.0  # seconds between face detections (NPU poll rate)
 confidence_threshold = 0.85
 headroom = 0.24  # empty space above head in crop (fraction of crop height)
-transition_speed = 0.2  # zoom in/out fade speed
-deadzone = 0.25  # center tolerance as portrait 3:4 box height (faces are vertical)
-size_deadzone = 0.2  # zoom tolerance: small forward/back shifts are ignored
+transition_speed = 0.25  # zoom in/out fade speed
+deadzone = 0.22  # center tolerance as portrait 3:4 box height (faces are vertical)
+size_deadzone = 0.15  # zoom tolerance: small forward/back shifts are ignored

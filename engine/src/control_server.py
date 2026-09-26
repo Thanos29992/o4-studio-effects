@@ -177,7 +177,15 @@ class EngineController:
 
         Clamps, writes state files (survive power cycles), and applies live
         to the running effect so changes take effect on the next frame.
+        Also accepts preset=<name> which expands to that preset's saved
+        values from engine/config/presets/<name>.toml first.
         """
+        if "preset" in params:
+            expanded = self._load_preset(str(params.get("preset", "")))
+            if isinstance(expanded, dict) and expanded.get("ok") is False:
+                return expanded
+            params = expanded  # type: ignore[assignment]
+
         applied: dict[str, float | int] = {}
         unknown = [k for k in params if k not in AF_PARAMS]
         for key, raw in params.items():
@@ -204,6 +212,26 @@ class EngineController:
         if unknown:
             out["unknown"] = unknown
         return out
+
+    @staticmethod
+    def _load_preset(name: str) -> dict[str, str] | dict:
+        """Read engine/config/presets/<name>.toml -> {AF key: str(value)}."""
+        import tomllib
+        from src.config import CONFIG_DIR
+
+        name = name.strip().lower()
+        if not name or not all(c.isalnum() or c in "_-" for c in name):
+            return {"ok": False, "error": f"invalid preset name '{name}'"}
+        path = CONFIG_DIR / "presets" / f"{name}.toml"
+        if not path.is_file():
+            return {"ok": False, "error": f"unknown preset '{name}'"}
+        try:
+            with open(path, "rb") as fh:
+                preset = tomllib.load(fh)
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            return {"ok": False, "error": f"preset unreadable: {exc}"}
+        af = preset.get("autoframe", {})
+        return {k: str(v) for k, v in af.items() if k in AF_PARAMS}
 
     def set_blur(self, value: int) -> dict:
         value = max(1, min(99, value))

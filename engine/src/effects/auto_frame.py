@@ -52,6 +52,15 @@ class AutoFrameEffect(BaseEffect):
         # consecutive polls seen outside the deadzone (debounce: only a
         # sustained excursion moves the target, single noisy detections don't)
         self._outside_streak = 0
+        # timed glide: ease-out tween from the displayed pose to the target
+        # (fast start at the smoothing rate, decelerating to an exact landing
+        # — replaces the endless exponential creep whose sub-pixel tail
+        # ratcheted the integer crop and looked "weird" at the end)
+        self._glide_active = False
+        self._glide_t = 0.0
+        self._glide_from = (0.5, 0.5, 0.15)
+        self._glide_g_xy = 1.0
+        self._glide_g_size = 1.0
         self._zoom_level = 1.0 if config.enabled else 0.0
         self._transitioning = False
         # latest RAW detection bbox (for guides) and last computed crop rectangle
@@ -182,29 +191,46 @@ class AutoFrameEffect(BaseEffect):
         self._target_center_x = target_cx
         self._target_center_y = target_cy
         self._target_face_size = target_size
+        self._begin_glide()
+
+    def _begin_glide(self) -> None:
+        """Start an ease-out tween from the current displayed pose to the target."""
+        alpha = min(self.config.smoothing_factor, 1.0)
+        self._glide_from = (self._smooth_center_x, self._smooth_center_y,
+                            self._smooth_face_size)
+        self._glide_t = 0.0
+        # duration chosen so the first frame's step equals alpha * gap (same
+        # starting speed as the old exponential ease); size at half rate
+        self._glide_g_xy = max(1.0, 3.0 / max(alpha, 1e-3))
+        self._glide_g_size = max(1.0, 3.0 / max(alpha * 0.5, 1e-3))
+        self._glide_active = True
 
     def _ease_toward_target(self) -> None:
-        """Glide the displayed pose toward the target every frame.
+        """Advance the displayed pose along the ease-out glide every frame.
 
-        Detection may poll once a second, but motion is eased per-frame,
-        so the crop drifts smoothly instead of jumping at each detection.
+        Starts at the smoothing slider's rate, decelerates over the last
+        stretch (ease-out cubic), and lands EXACTLY on the endpoint after
+        a fixed number of frames — no sub-pixel creep, no ratcheting tail.
         """
-        # EMA coefficient is capped at 1.0: above that the error term flips
-        # sign each frame (slider 1.0–2.0 = "instant snap", never overshoot)
-        alpha = min(self.config.smoothing_factor, 1.0)
+        if not self._glide_active:
+            return
+        self._glide_t += 1.0
 
-        # tail snap: exponential ease never quite reaches the target, so the
-        # last sub-pixel creep + integer crop rounding flickers at the end of
-        # every glide (the "slight vibration"). Snap the final <1px instead.
-        def ease(sm: float, tg: float, rate: float) -> float:
-            d = tg - sm
-            if abs(d) < 0.002:  # ≈1px at 480p
-                return tg
-            return sm + rate * d
+        def step(frm: float, tg: float, frames: float) -> float:
+            u = min(1.0, self._glide_t / frames)
+            if u >= 1.0:
+                return tg  # exact landing
+            return frm + (tg - frm) * (1.0 - (1.0 - u) ** 3)
 
-        self._smooth_center_x = ease(self._smooth_center_x, self._target_center_x, alpha)
-        self._smooth_center_y = ease(self._smooth_center_y, self._target_center_y, alpha)
-        self._smooth_face_size = ease(self._smooth_face_size, self._target_face_size, alpha * 0.5)
+        fx, fy, fs = self._glide_from
+        self._smooth_center_x = step(fx, self._target_center_x, self._glide_g_xy)
+        self._smooth_center_y = step(fy, self._target_center_y, self._glide_g_xy)
+        self._smooth_face_size = step(fs, self._target_face_size, self._glide_g_size)
+
+        if (self._smooth_center_x == self._target_center_x and
+                self._smooth_center_y == self._target_center_y and
+                self._smooth_face_size == self._target_face_size):
+            self._glide_active = False
 
     @BaseEffect.enabled.setter
     def enabled(self, value: bool) -> None:
