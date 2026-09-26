@@ -89,15 +89,6 @@
   input:checked + .slider { background: var(--good); }
   input:checked + .slider::before { transform: translateX(20px); background: #fff; }
 
-  /* mode buttons */
-  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  .modes button {
-    font: inherit; font-size: 12px; padding: 8px 0; border-radius: 6px; cursor: pointer;
-    background: var(--panel2); color: var(--dim); border: 1px solid var(--border); transition: .15s;
-  }
-  .modes button.active { background: #14364a; color: var(--accent); border-color: var(--accent); }
-  .modes button:hover { border-color: var(--accent); }
-
   /* slider */
   .rng-row { margin-top: 12px; }
   .rng-row label { font-size: 12px; color: var(--dim); display: flex; justify-content: space-between; margin-bottom: 6px; }
@@ -113,16 +104,6 @@
 
   .hint { font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: 10px; }
   .hint code { background: var(--panel2); padding: 1px 5px; border-radius: 3px; color: var(--accent); }
-
-  /* auto-framing tuning grid */
-  .card h2 .tag {
-    float: right; font-size: 10px; letter-spacing: .5px; color: var(--warn);
-    border: 1px solid var(--warn); border-radius: 4px; padding: 1px 6px; font-weight: 400;
-    text-transform: none;
-  }
-  .af-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px 20px; }
-  .af-grid .rng-row { margin-top: 6px; }
-  .af-grid .hint { margin-top: 4px; font-size: 10px; }
 
   /* preset buttons */
   .pbtn {
@@ -164,64 +145,13 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Auto-Framing</h2>
-      <div class="toggle-row" style="border-bottom:1px solid #262626;padding-top:0">
-        <span class="name">Guides on RAW<small>HOLD = don't-move zone · CROP = what's taken · FACE = detector</small></span>
-        <label class="switch"><input type="checkbox" id="tgGuides" checked
-               onchange="setFeeds(power)"><span class="slider"></span></label>
-      </div>
-      <div class="toggle-row" style="border-bottom:1px solid #262626">
-        <span class="name">Presets<small>SLOW = gentle default · FAST = funky, ~10% NPU</small></span>
-        <span style="display:flex;gap:6px">
-          <button class="pbtn" onclick="setAF('preset','slow').then(poll)">SLOW</button>
-          <button class="pbtn" onclick="setAF('preset','fast').then(poll)">FAST</button>
-        </span>
-      </div>
-      <div class="hint" id="afSummary">—</div>
-    </div>
-
-    <div class="card">
-      <h2>Background Tuning <span class="tag">TEMPORARY</span></h2>
-      <div class="af-grid">
-        <div class="rng-row">
-          <label>Edge feather <b id="bgFeatherVal">5</b> px</label>
-          <input type="range" min="1" max="15" step="2" id="bgFeather"
-                 oninput="$('bgFeatherVal').textContent=this.value"
-                 onchange="setBG('feather', this.value)">
-          <div class="hint">matte boundary softness · 1 = crisp edge · higher = softer hair blend</div>
-        </div>
-        <div class="rng-row">
-          <label>Matte floor <b id="bgFloorVal">0.05</b></label>
-          <input type="range" min="0" max="0.35" step="0.01" id="bgFloor"
-                 oninput="$('bgFloorVal').textContent=Number(this.value).toFixed(2)"
-                 onchange="setBG('floor', this.value)">
-          <div class="hint">alpha below this = background · higher kills edge bleed</div>
-        </div>
-        <div class="rng-row">
-          <label>Matte gamma <b id="bgGammaVal">1.00</b></label>
-          <input type="range" min="0.5" max="2" step="0.05" id="bgGamma"
-                 oninput="$('bgGammaVal').textContent=Number(this.value).toFixed(2)"
-                 onchange="setBG('gamma', this.value)">
-          <div class="hint">&lt;1 = fatter subject · &gt;1 = tighter matte (less halo)</div>
-        </div>
-        <div class="rng-row">
-          <label>Temporal <b id="bgTemporalVal">0.50</b></label>
-          <input type="range" min="0" max="0.95" step="0.05" id="bgTemporal"
-                 oninput="$('bgTemporalVal').textContent=Number(this.value).toFixed(2)"
-                 onchange="setBG('temporal', this.value)">
-          <div class="hint">edge smoothing over time · higher = steadier but laggier</div>
-        </div>
-      </div>
-      <div class="hint">All knobs apply live and survive restarts. Say the values you like and they get locked as defaults.</div>
-    </div>
   </div>
 
   <div class="sidebar">
     <div class="card">
       <h2>Effects</h2>
       <div class="toggle-row">
-        <span class="name">Background<small>blur / replace your backdrop</small></span>
+        <span class="name">Background<small>blur your backdrop</small></span>
         <label class="switch"><input type="checkbox" id="tgBackground" onchange="setEffect('background', this.checked)"><span class="slider"></span></label>
       </div>
       <div class="toggle-row">
@@ -231,37 +161,31 @@
     </div>
 
     <div class="card">
-      <h2>Background Mode</h2>
-      <div class="modes">
-        <button id="mBlur" onclick="setMode('blur')">BLUR</button>
-        <button id="mReplace" onclick="setMode('replace')">REPLACE</button>
-        <button id="mNone" onclick="setMode('none')">NONE</button>
-      </div>
-      <div class="rng-row">
+      <h2>Background Blur</h2>
+      <div class="rng-row" style="margin-top:0">
         <label>Blur strength <b id="blurVal">50</b></label>
         <input type="range" min="5" max="95" step="2" value="50" id="blurRange"
                oninput="document.getElementById('blurVal').textContent=this.value"
                onchange="setBlur(this.value)">
       </div>
-      <div class="rng-row" id="bgImageRow" style="display:none">
-        <label>Background image path</label>
-        <input type="text" id="bgImagePath" placeholder="/home/you/pics/bg.jpg"
-          style="width:100%;font:inherit;font-size:12px;padding:7px 9px;border-radius:6px;
-                 border:1px solid var(--border);background:var(--panel2);color:var(--text);margin-top:4px">
-        <button onclick="setBgImage()" style="margin-top:6px;width:100%;font:inherit;font-size:12px;
-                padding:7px;border-radius:6px;cursor:pointer;background:var(--panel2);
-                color:var(--text);border:1px solid var(--border)">APPLY IMAGE</button>
-      </div>
-      <div class="hint">REPLACE swaps the background for an image on disk.</div>
+      <div class="hint">Blurs everything behind you · strength = softness.</div>
     </div>
 
     <div class="card">
-      <h2>Output</h2>
-      <div class="hint">
-        Virtual camera: <code>/dev/video10</code><br>
-        Pick "StudioEffects" in Zoom / Meet / OBS.<br>
-        Toggles persist — synced with the bar panel state files.
+      <h2>Auto-Framing</h2>
+      <div class="toggle-row" style="border-bottom:1px solid #262626;padding-top:0">
+        <span class="name">Guides on RAW<small>HOLD = don't-move zone · CROP = what's taken · FACE = detector</small></span>
+        <label class="switch"><input type="checkbox" id="tgGuides" checked
+               onchange="setFeeds(power)"><span class="slider"></span></label>
       </div>
+      <div class="toggle-row">
+        <span class="name">Presets<small>SLOW = gentle default · FAST = funky, ~10% NPU</small></span>
+        <span style="display:flex;gap:6px">
+          <button class="pbtn" onclick="setAF('preset','slow').then(poll)">SLOW</button>
+          <button class="pbtn" onclick="setAF('preset','fast').then(poll)">FAST</button>
+        </span>
+      </div>
+      <div class="hint" id="afSummary">—</div>
     </div>
   </div>
 </div>
@@ -279,16 +203,8 @@ async function api(path, method = 'GET') {
 
 function togglePower() { api('/api/power?state=' + (power ? 'off' : 'on'), 'POST').then(poll); }
 function setEffect(name, on) { api(`/api/effect?name=${name}&state=${on ? 'on' : 'off'}`, 'POST').then(poll); }
-function setMode(m) { api('/api/mode?value=' + m, 'POST').then(poll); }
 function setBlur(v) { api('/api/blur?value=' + v, 'POST'); }
 function setAF(k, v) { return api('/api/autoframe?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); return r; }); }
-function setBG(k, v) { return api('/api/bgparam?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); return r; }); }
-function setBgImage() {
-  const p = $('bgImagePath').value.trim();
-  if (p) api('/api/bgimage?path=' + encodeURIComponent(p), 'POST').then(r => {
-    if (r.ok) setMode('replace'); else alert(r.error || 'failed');
-  });
-}
 
 function setFeeds(on) {
   const raw = $('rawFeed'), proc = $('procFeed');
@@ -323,11 +239,6 @@ async function poll() {
   $('tgBackground').checked = !!s.effects.background;
   $('tgAutoframe').checked = !!s.effects.auto_frame;
 
-  $('mBlur').classList.toggle('active', s.mode === 'blur');
-  $('mReplace').classList.toggle('active', s.mode === 'replace');
-  $('mNone').classList.toggle('active', s.mode === 'none');
-  $('bgImageRow').style.display = s.mode === 'replace' ? 'block' : 'none';
-
   if ($('blurRange') != document.activeElement) $('blurRange').value = s.blur;
   $('blurVal').textContent = s.blur;
 
@@ -339,22 +250,8 @@ async function poll() {
       `deadzone ${+af.deadzone} · zoom-dz ${+af.szdeadzone}`;
   }
 
-  const bgp = s.bgparam;
-  if (bgp) {
-    const rows = [
-      ['bgFeather', 'bgFeatherVal', bgp.feather, 0],
-      ['bgFloor', 'bgFloorVal', bgp.floor, 2],
-      ['bgGamma', 'bgGammaVal', bgp.gamma, 2],
-      ['bgTemporal', 'bgTemporalVal', bgp.temporal, 2],
-    ];
-    for (const [id, valId, v, dp] of rows) {
-      if ($(id) != document.activeElement) $(id).value = v;
-      $(valId).textContent = Number(v).toFixed(dp);
-    }
-  }
-
   const tag = [];
-  if (s.effects.background) tag.push(s.mode.toUpperCase());
+  if (s.effects.background) tag.push('BLUR');
   if (s.effects.auto_frame) tag.push('FRAMING');
   $('procTag').textContent = tag.length ? '· ' + tag.join(' · ') : '';
 
