@@ -43,6 +43,7 @@
   @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
 
   /* video panes */
+  .main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   @media (max-width: 640px) { .panes { grid-template-columns: 1fr; } }
   .pane {
@@ -112,6 +113,16 @@
 
   .hint { font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: 10px; }
   .hint code { background: var(--panel2); padding: 1px 5px; border-radius: 3px; color: var(--accent); }
+
+  /* auto-framing tuning grid */
+  .card h2 .tag {
+    float: right; font-size: 10px; letter-spacing: .5px; color: var(--warn);
+    border: 1px solid var(--warn); border-radius: 4px; padding: 1px 6px; font-weight: 400;
+    text-transform: none;
+  }
+  .af-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px 20px; }
+  .af-grid .rng-row { margin-top: 6px; }
+  .af-grid .hint { margin-top: 4px; font-size: 10px; }
 </style>
 </head>
 <body>
@@ -130,16 +141,67 @@
 </div>
 
 <div class="layout">
-  <div class="panes">
-    <div class="pane">
-      <span class="label raw">RAW</span>
-      <img id="rawFeed" alt="raw">
-      <div class="placeholder" id="rawPh">camera off — press POWER</div>
+  <div class="main">
+    <div class="panes">
+      <div class="pane">
+        <span class="label raw">RAW</span>
+        <img id="rawFeed" alt="raw">
+        <div class="placeholder" id="rawPh">camera off — press POWER</div>
+      </div>
+      <div class="pane">
+        <span class="label proc">PROCESSED&nbsp;&nbsp;<span id="procTag"></span></span>
+        <img id="procFeed" alt="processed">
+        <div class="placeholder" id="procPh">camera off — press POWER</div>
+      </div>
     </div>
-    <div class="pane">
-      <span class="label proc">PROCESSED&nbsp;&nbsp;<span id="procTag"></span></span>
-      <img id="procFeed" alt="processed">
-      <div class="placeholder" id="procPh">camera off — press POWER</div>
+
+    <div class="card">
+      <h2>Auto-Framing Tuning <span class="tag">TEMPORARY</span></h2>
+      <div class="af-grid">
+        <div class="rng-row">
+          <label>Smoothing <b id="afSmoothingVal">0.04</b></label>
+          <input type="range" min="0.01" max="0.5" step="0.01" id="afSmoothing"
+                 oninput="$('afSmoothingVal').textContent=this.value"
+                 onchange="setAF('smoothing', this.value)">
+          <div class="hint">lower = calm drift · higher = snappy follow</div>
+        </div>
+        <div class="rng-row">
+          <label>Zoom margin <b id="afZoomVal">2.2</b></label>
+          <input type="range" min="1" max="3" step="0.05" id="afZoom"
+                 oninput="$('afZoomVal').textContent=this.value"
+                 onchange="setAF('zoom', this.value)">
+          <div class="hint">lower = tighter crop · higher = wider shot</div>
+        </div>
+        <div class="rng-row">
+          <label>Detect every <b id="afIntervalVal">1</b> fr</label>
+          <input type="range" min="1" max="15" step="1" id="afInterval"
+                 oninput="$('afIntervalVal').textContent=this.value"
+                 onchange="setAF('interval', this.value)">
+          <div class="hint">higher = less CPU · laggier tracking</div>
+        </div>
+        <div class="rng-row">
+          <label>Face confidence <b id="afConfidenceVal">0.50</b></label>
+          <input type="range" min="0.1" max="0.9" step="0.05" id="afConfidence"
+                 oninput="$('afConfidenceVal').textContent=this.value"
+                 onchange="setAF('confidence', this.value)">
+          <div class="hint">lower = locks on easily · higher = fewer false locks</div>
+        </div>
+        <div class="rng-row">
+          <label>Headroom <b id="afHeadroomVal">0.18</b></label>
+          <input type="range" min="0" max="0.5" step="0.01" id="afHeadroom"
+                 oninput="$('afHeadroomVal').textContent=this.value"
+                 onchange="setAF('headroom', this.value)">
+          <div class="hint">empty space above your head in frame</div>
+        </div>
+        <div class="rng-row">
+          <label>Transition <b id="afTransitionVal">0.05</b></label>
+          <input type="range" min="0.01" max="0.2" step="0.01" id="afTransition"
+                 oninput="$('afTransitionVal').textContent=this.value"
+                 onchange="setAF('transition', this.value)">
+          <div class="hint">zoom in/out fade speed on toggle</div>
+        </div>
+      </div>
+      <div class="hint">All knobs apply live and survive restarts. Say the values you like and they get locked as defaults.</div>
     </div>
   </div>
 
@@ -207,6 +269,7 @@ function togglePower() { api('/api/power?state=' + (power ? 'off' : 'on'), 'POST
 function setEffect(name, on) { api(`/api/effect?name=${name}&state=${on ? 'on' : 'off'}`, 'POST').then(poll); }
 function setMode(m) { api('/api/mode?value=' + m, 'POST').then(poll); }
 function setBlur(v) { api('/api/blur?value=' + v, 'POST'); }
+function setAF(k, v) { api('/api/autoframe?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); }); }
 function setBgImage() {
   const p = $('bgImagePath').value.trim();
   if (p) api('/api/bgimage?path=' + encodeURIComponent(p), 'POST').then(r => {
@@ -254,6 +317,22 @@ async function poll() {
 
   if ($('blurRange') != document.activeElement) $('blurRange').value = s.blur;
   $('blurVal').textContent = s.blur;
+
+  const af = s.autoframe;
+  if (af) {
+    const rows = [
+      ['afSmoothing', 'afSmoothingVal', af.smoothing, 2],
+      ['afZoom', 'afZoomVal', af.zoom, 2],
+      ['afInterval', 'afIntervalVal', af.interval, 0],
+      ['afConfidence', 'afConfidenceVal', af.confidence, 2],
+      ['afHeadroom', 'afHeadroomVal', af.headroom, 2],
+      ['afTransition', 'afTransitionVal', af.transition, 2],
+    ];
+    for (const [id, valId, v, dp] of rows) {
+      if ($(id) != document.activeElement) $(id).value = v;
+      $(valId).textContent = Number(v).toFixed(dp);
+    }
+  }
 
   const tag = [];
   if (s.effects.background) tag.push(s.mode.toUpperCase());

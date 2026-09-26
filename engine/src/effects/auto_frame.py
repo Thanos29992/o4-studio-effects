@@ -27,8 +27,6 @@ MODEL_DIR = Path(__file__).parent.parent / "models" / "weights"
 MODEL_XML = MODEL_DIR / "face-detection-adas-0001.xml"
 MODEL_BIN = MODEL_DIR / "face-detection-adas-0001.bin"
 
-CONFIDENCE_THRESHOLD = 0.5
-
 
 class AutoFrameEffect(BaseEffect):
     def __init__(self, model_manager: ModelManager, config: AutoFrameConfig) -> None:
@@ -88,7 +86,7 @@ class AutoFrameEffect(BaseEffect):
         faces: list[tuple[float, float, float, float]] = []
         for detection in detections:
             confidence = detection[2]
-            if confidence > CONFIDENCE_THRESHOLD:
+            if confidence > self.config.confidence_threshold:
                 x_min = float(np.clip(detection[3], 0.0, 1.0))
                 y_min = float(np.clip(detection[4], 0.0, 1.0))
                 x_max = float(np.clip(detection[5], 0.0, 1.0))
@@ -138,7 +136,7 @@ class AutoFrameEffect(BaseEffect):
         target_zoom = 1.0 if self._enabled else 0.0
 
         if self._transitioning:
-            self._zoom_level += 0.05 * (target_zoom - self._zoom_level)
+            self._zoom_level += self.config.transition_speed * (target_zoom - self._zoom_level)
             if abs(self._zoom_level - target_zoom) < 0.01:
                 self._zoom_level = target_zoom
                 self._transitioning = False
@@ -176,7 +174,7 @@ class AutoFrameEffect(BaseEffect):
         crop_w_px = min(crop_w_px, float(frame_width))
         crop_h_px = crop_w_px / aspect_ratio
 
-        ideal_crop_top = face_top - crop_h_px * 0.18
+        ideal_crop_top = face_top - crop_h_px * self.config.headroom
         target_cy = ideal_crop_top + crop_h_px * 0.5
         target_cx = face_center_x
 

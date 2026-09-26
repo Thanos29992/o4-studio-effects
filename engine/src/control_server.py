@@ -6,6 +6,7 @@ Single HTTP server (default :18080) that provides:
   POST /api/power?state=on|off   -> open/release camera + start/stop pipeline
   POST /api/effect?name=..&state=on|off -> toggle effect live (+ sync state file)
   POST /api/blur?value=0..100     -> blur strength (syncs state/blur_strength)
+  POST /api/autoframe?smoothing=..&zoom=..&interval=..&confidence=..&headroom=..&transition=..
   GET  /stream/raw.mjpg      -> MJPEG of unprocessed camera
   GET  /stream/processed.mjpg-> MJPEG of processed output
 
@@ -36,6 +37,16 @@ NPU_BUSY_PATH = Path("/sys/devices/pci0000:00/0000:00:0b.0/npu_busy_time_us")
 EFFECT_MAP = {
     "background": "modnet",
     "auto_frame": "face-adas",
+}
+
+# auto-framing tunables: query key -> (config attr, caster, min, max, state file)
+AF_PARAMS = {
+    "smoothing":  ("smoothing_factor",     float, 0.01, 0.5,  "af_smoothing"),
+    "zoom":       ("zoom_margin",          float, 1.0,  3.0,  "af_zoom"),
+    "interval":   ("detection_interval",   int,   1,    15,   "af_interval"),
+    "confidence": ("confidence_threshold", float, 0.1,  0.9,  "af_confidence"),
+    "headroom":   ("headroom",             float, 0.0,  0.5,  "af_headroom"),
+    "transition": ("transition_speed",     float, 0.01, 0.2,  "af_transition"),
 }
 
 # JS/CSS assets are inlined in camera.html; nothing else to serve.
@@ -129,6 +140,16 @@ class EngineController:
         if bg_image:
             config.effects.background.background_image = bg_image
 
+        # auto-framing tunables (live-tuned values persist across power cycles)
+        af = config.effects.auto_frame
+        for attr, caster, lo, hi, state_name in AF_PARAMS.values():
+            raw = _read_state(state_name, "")
+            if raw:
+                try:
+                    setattr(af, attr, max(lo, min(hi, caster(raw))))
+                except ValueError:
+                    pass
+
     def set_effect(self, name: str, enabled: bool) -> dict:
         suffix = EFFECT_MAP.get(name, "__invalid__")
         if suffix == "__invalid__":
@@ -148,6 +169,39 @@ class EngineController:
                     effect.enabled = enabled
                     return {"ok": True, "effect": name, "enabled": enabled, "power": True}
         return {"ok": False, "error": "effect not found in pipeline"}
+
+    def set_autoframe(self, params: dict[str, str]) -> dict:
+        """Update auto-framing tunables (any subset of AF_PARAMS keys).
+
+        Clamps, writes state files (survive power cycles), and applies live
+        to the running effect so changes take effect on the next frame.
+        """
+        applied: dict[str, float | int] = {}
+        unknown = [k for k in params if k not in AF_PARAMS]
+        for key, raw in params.items():
+            spec = AF_PARAMS.get(key)
+            if spec is None:
+                continue
+            attr, caster, lo, hi, state_name = spec
+            try:
+                value = caster(float(raw))
+            except ValueError:
+                continue
+            if caster is int:
+                value = int(value)
+            value = max(lo, min(hi, value))
+            _write_state(state_name, str(value))
+            applied[key] = value
+            with self._lock:
+                pipeline = self._pipeline
+                if pipeline is not None:
+                    for effect in pipeline.get_effects():
+                        if type(effect).__name__ == "AutoFrameEffect":
+                            setattr(effect.config, attr, value)
+        out: dict = {"ok": bool(applied), "applied": applied}
+        if unknown:
+            out["unknown"] = unknown
+        return out
 
     def set_blur(self, value: int) -> dict:
         value = max(1, min(99, value))
@@ -220,6 +274,7 @@ class EngineController:
             effects_state = {}
             fps = None
             mode = None
+            af_live = None
             if pipeline is not None:
                 for effect in pipeline.get_effects():
                     key = {"BackgroundEffect": "background",
@@ -228,7 +283,21 @@ class EngineController:
                         effects_state[key] = bool(effect.enabled)
                     if type(effect).__name__ == "BackgroundEffect":
                         mode = effect.config.mode
+                    if type(effect).__name__ == "AutoFrameEffect":
+                        af_live = {
+                            web_key: getattr(effect.config, attr)
+                            for web_key, (attr, *_rest) in AF_PARAMS.items()
+                        }
                 fps = getattr(pipeline, "fps", None)
+
+        if af_live is None:
+            # powered off: report state-file values (fall back to config defaults)
+            from src.config import load_config
+            af_cfg = load_config().effects.auto_frame
+            af_live = {
+                web_key: getattr(af_cfg, attr)
+                for web_key, (attr, *_rest) in AF_PARAMS.items()
+            }
 
         proc = psutil.Process()
         return {
@@ -236,6 +305,7 @@ class EngineController:
             "effects": effects_state,
             "blur": int(_read_state("blur_strength", "50") or 50),
             "mode": mode or _read_state("bg_mode", "blur"),
+            "autoframe": af_live,
             "fps": round(fps, 1) if fps else None,
             "npu_percent": self._npu_percent(),
             "cpu_percent": round(proc.cpu_percent(interval=0.0) / (os.cpu_count() or 1), 1),
@@ -343,6 +413,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "need name + state=on|off"}, 400)
                 return
             self._json(_controller.set_effect(name, state == "on"))
+        elif parsed.path == "/api/autoframe":
+            self._json(_controller.set_autoframe(q))
         elif parsed.path == "/api/blur":
             try:
                 value = int(q.get("value", ""))

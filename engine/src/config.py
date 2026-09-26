@@ -44,6 +44,9 @@ class AutoFrameConfig:
     zoom_margin: float = 1.3
     smoothing_factor: float = 0.15
     detection_interval: int = 3
+    confidence_threshold: float = 0.5
+    headroom: float = 0.18
+    transition_speed: float = 0.05
 
 
 @dataclass

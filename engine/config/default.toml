@@ -24,3 +24,6 @@ enabled = true
 zoom_margin = 2.2
 smoothing_factor = 0.04
 detection_interval = 1  # run face detection every N frames
+confidence_threshold = 0.5
+headroom = 0.18  # empty space above head in crop (fraction of crop height)
+transition_speed = 0.05  # zoom in/out fade speed
