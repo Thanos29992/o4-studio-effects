@@ -15,7 +15,7 @@ A reimplementation of Windows Studio Effects for Linux, built on OpenVINO and Pi
 | Effect | Model | Accelerator | Notes |
 |--------|-------|-------------|-------|
 | **Noise Suppression** | DeepFilterNet3 | NPU (fallback: GPU/CPU) | Real-time, ~3ms/frame on NPU |
-| **Background Blur** | MODNet | NPU (fallback: GPU) | ~23ms/frame at 256×256 |
+| **Background Blur** | RVM (MobileNetV3) | NPU (fallback: GPU) | ~14ms/frame at 640×480, GT-benchmarked (MAE 1.3% vs MODNet 3.1%) |
 | **Auto-Framing** | face-detection-adas-0001 | CPU | Sparse detection, not continuous |
 | **Voice Super-Resolution** | AudioSR | GPU + NPU (dual-core) | Chunked, 4s windows |
 | **Image Upscaling** | Real-ESRGAN x4 | GPU (fallback: NPU) | On-demand for snapshots |
