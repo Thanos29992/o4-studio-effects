@@ -1,0 +1,26 @@
+[camera]
+device_index = 0
+width = 1280
+height = 720
+fps = 30
+mirror = true
+
+[virtual_camera]
+device_path = "/dev/video10"
+label = "StudioEffects"
+
+[inference]
+device = "NPU"
+fallback_device = "CPU"
+
+[effects.background]
+enabled = false
+mode = "blur"  # "blur", "replace", "none"
+blur_strength = 51
+background_image = ""
+
+[effects.auto_frame]
+enabled = true
+zoom_margin = 2.2
+smoothing_factor = 0.04
+detection_interval = 1  # run face detection every N frames

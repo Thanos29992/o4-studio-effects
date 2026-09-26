@@ -1,76 +1,270 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Studio Effects Test</title>
-  <style>
-    html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; color: #d4d4d4; }
-    body { font-family: ui-monospace, Consolas, monospace; display: flex; flex-direction: column; align-items: center; }
-    h1 { margin: 12px 0; font-size: 18px; }
-    .split { display: flex; gap: 4px; padding: 4px; height: calc(100vh - 80px); }
-    .split video { width: 50%; height: 100%; object-fit: contain; background: #2d2d2d; }
-    .split video.raw { border: 2px solid #444; }
-    .split video.processed { border: 2px solid #007acc; }
-    .label { position: absolute; top: 4px; left: 8px; background: rgba(0,0,0,0.7); padding: 2px 8px; border-radius: 3px; font-size: 13px; }
-    .container { position: relative; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio Effects — Live Console</title>
+<style>
+  :root {
+    --bg: #131313; --panel: #1c1c1c; --panel2: #242424; --border: #333;
+    --text: #e8e8e8; --dim: #8a8a8a; --accent: #4fc3f7; --good: #66bb6a;
+    --bad: #ef5350; --warn: #ffb74d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    min-height: 100vh; padding: 20px;
+  }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  h1 { font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }
+  h1 .sub { color: var(--dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
+
+  /* power button */
+  #power {
+    margin-left: auto; padding: 10px 26px; font: inherit; font-weight: 700; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    background: var(--panel2); color: var(--dim); transition: all .15s;
+    display: flex; align-items: center; gap: 8px;
+  }
+  #power.on { background: #1b3a1e; color: var(--good); border-color: var(--good); }
+  #power:hover { border-color: var(--accent); }
+
+  /* status chips */
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 12px; font-size: 12px; color: var(--dim);
+  }
+  .chip b { color: var(--text); font-weight: 600; }
+  .chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; }
+  .chip .dot.ok { background: var(--good); }
+
+  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  /* video panes */
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  @media (max-width: 640px) { .panes { grid-template-columns: 1fr; } }
+  .pane {
+    position: relative; background: #000; border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; aspect-ratio: 4/3;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pane img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .pane .label {
+    position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.75);
+    padding: 3px 10px; border-radius: 4px; font-size: 12px; letter-spacing: .4px;
+  }
+  .pane .label.raw { color: var(--dim); }
+  .pane .label.proc { color: var(--accent); }
+  .pane .placeholder { color: #555; font-size: 13px; text-align: center; padding: 20px; }
+
+  /* sidebar controls */
+  .sidebar { display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+  }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 12px; }
+
+  /* toggle switch */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 0; border-bottom: 1px solid #262626;
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-row .name { font-size: 13px; }
+  .toggle-row .name small { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; }
+  .switch { position: relative; width: 42px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: #3a3a3a; border-radius: 22px;
+    cursor: pointer; transition: .18s;
+  }
+  .slider::before {
+    content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+    background: #ccc; border-radius: 50%; transition: .18s;
+  }
+  input:checked + .slider { background: var(--good); }
+  input:checked + .slider::before { transform: translateX(20px); background: #fff; }
+
+  /* mode buttons */
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .modes button {
+    font: inherit; font-size: 12px; padding: 8px 0; border-radius: 6px; cursor: pointer;
+    background: var(--panel2); color: var(--dim); border: 1px solid var(--border); transition: .15s;
+  }
+  .modes button.active { background: #14364a; color: var(--accent); border-color: var(--accent); }
+  .modes button:hover { border-color: var(--accent); }
+
+  /* slider */
+  .rng-row { margin-top: 12px; }
+  .rng-row label { font-size: 12px; color: var(--dim); display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .rng-row label b { color: var(--text); }
+  input[type=range] {
+    width: 100%; -webkit-appearance: none; height: 6px; border-radius: 3px;
+    background: #3a3a3a; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+  }
+
+  .hint { font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: 10px; }
+  .hint code { background: var(--panel2); padding: 1px 5px; border-radius: 3px; color: var(--accent); }
+</style>
 </head>
 <body>
-  <h1>Studio Effects Test</h1>
-  <div class="split">
-    <div class="container">
-      <span class="label">Raw Webcam</span>
-      <video id="raw" autoplay playsinline></video>
+
+<header>
+  <h1>STUDIO EFFECTS<span class="sub">live console</span></h1>
+  <button id="power" onclick="togglePower()">⏻ <span id="powerLabel">POWER OFF</span></button>
+</header>
+
+<div class="chips">
+  <span class="chip"><span class="dot" id="dotCam"></span>CAMERA <b id="stCam">—</b></span>
+  <span class="chip">FPS <b id="stFps">—</b></span>
+  <span class="chip">NPU <b id="stNpu">—</b></span>
+  <span class="chip">CPU <b id="stCpu">—</b></span>
+  <span class="chip">RAM <b id="stRam">—</b></span>
+</div>
+
+<div class="layout">
+  <div class="panes">
+    <div class="pane">
+      <span class="label raw">RAW</span>
+      <img id="rawFeed" alt="raw">
+      <div class="placeholder" id="rawPh">camera off — press POWER</div>
     </div>
-    <div class="container">
-      <span class="label">Processed (/dev/video10)</span>
-      <video id="processed" autoplay playsinline></video>
+    <div class="pane">
+      <span class="label proc">PROCESSED&nbsp;&nbsp;<span id="procTag"></span></span>
+      <img id="procFeed" alt="processed">
+      <div class="placeholder" id="procPh">camera off — press POWER</div>
     </div>
   </div>
-  <script>
-    async function setup() {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d => d.kind === 'videoinput');
 
-      // Show all video devices
-      const processed = document.getElementById('processed');
-      const raw = document.getElementById('raw');
+  <div class="sidebar">
+    <div class="card">
+      <h2>Effects</h2>
+      <div class="toggle-row">
+        <span class="name">Background<small>blur / replace your backdrop</small></span>
+        <label class="switch"><input type="checkbox" id="tgBackground" onchange="setEffect('background', this.checked)"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="name">Auto-Framing<small>keeps your face centered</small></span>
+        <label class="switch"><input type="checkbox" id="tgAutoframe" onchange="setEffect('auto_frame', this.checked)"><span class="slider"></span></label>
+      </div>
+    </div>
 
-      // Try to get /dev/video10 (v4l2loopback) first, then fall back to default
-      let processedSource = null;
-      for (const d of videoDevices) {
-        if (d.label.includes('video10') || d.label.toLowerCase().includes('loopback')) {
-          processedSource = d;
-          break;
-        }
-      }
-      if (!processedSource && videoDevices.length > 1) {
-        processedSource = videoDevices[1];
-      }
-      if (!processedSource) processedSource = videoDevices[0];
+    <div class="card">
+      <h2>Background Mode</h2>
+      <div class="modes">
+        <button id="mBlur" onclick="setMode('blur')">BLUR</button>
+        <button id="mReplace" onclick="setMode('replace')">REPLACE</button>
+        <button id="mNone" onclick="setMode('none')">NONE</button>
+      </div>
+      <div class="rng-row">
+        <label>Blur strength <b id="blurVal">50</b></label>
+        <input type="range" min="5" max="95" step="2" value="50" id="blurRange"
+               oninput="document.getElementById('blurVal').textContent=this.value"
+               onchange="setBlur(this.value)">
+      </div>
+      <div class="rng-row" id="bgImageRow" style="display:none">
+        <label>Background image path</label>
+        <input type="text" id="bgImagePath" placeholder="/home/you/pics/bg.jpg"
+          style="width:100%;font:inherit;font-size:12px;padding:7px 9px;border-radius:6px;
+                 border:1px solid var(--border);background:var(--panel2);color:var(--text);margin-top:4px">
+        <button onclick="setBgImage()" style="margin-top:6px;width:100%;font:inherit;font-size:12px;
+                padding:7px;border-radius:6px;cursor:pointer;background:var(--panel2);
+                color:var(--text);border:1px solid var(--border)">APPLY IMAGE</button>
+      </div>
+      <div class="hint">REPLACE swaps the background for an image on disk.</div>
+    </div>
 
-      // Raw is always the first camera
-      if (videoDevices.length > 0) {
-        raw.srcObject = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: videoDevices[0].deviceId }
-        });
-      }
+    <div class="card">
+      <h2>Output</h2>
+      <div class="hint">
+        Virtual camera: <code>/dev/video10</code><br>
+        Pick "StudioEffects" in Zoom / Meet / OBS.<br>
+        Toggles persist — synced with the bar panel state files.
+      </div>
+    </div>
+  </div>
+</div>
 
-      // Processed from v4l2loopback
-      if (processedSource) {
-        try {
-          processed.srcObject = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: processedSource.deviceId }
-          });
-        } catch (e) {
-          processed.src = 'data:,'; // show blank if not available
-          console.warn('Could not access processed video source:', e);
-        }
-      }
-    }
+<script>
+const $ = id => document.getElementById(id);
+let power = false;
 
-    setup().catch(e => console.error(e));
-  </script>
+async function api(path, method = 'GET') {
+  try {
+    const r = await fetch(path, { method });
+    return await r.json();
+  } catch (e) { return { ok: false, error: String(e) }; }
+}
+
+function togglePower() { api('/api/power?state=' + (power ? 'off' : 'on'), 'POST').then(poll); }
+function setEffect(name, on) { api(`/api/effect?name=${name}&state=${on ? 'on' : 'off'}`, 'POST').then(poll); }
+function setMode(m) { api('/api/mode?value=' + m, 'POST').then(poll); }
+function setBlur(v) { api('/api/blur?value=' + v, 'POST'); }
+function setBgImage() {
+  const p = $('bgImagePath').value.trim();
+  if (p) api('/api/bgimage?path=' + encodeURIComponent(p), 'POST').then(r => {
+    if (r.ok) setMode('replace'); else alert(r.error || 'failed');
+  });
+}
+
+function setFeeds(on) {
+  const raw = $('rawFeed'), proc = $('procFeed');
+  if (on) {
+    const bust = '?t=' + Date.now();
+    raw.src = '/stream/raw.mjpg' + bust;
+    proc.src = '/stream/processed.mjpg' + bust;
+    raw.style.display = proc.style.display = 'block';
+    $('rawPh').style.display = $('procPh').style.display = 'none';
+  } else {
+    raw.src = proc.src = '';
+    raw.style.display = proc.style.display = 'none';
+    $('rawPh').style.display = $('procPh').style.display = 'block';
+  }
+}
+
+async function poll() {
+  const s = await api('/api/status');
+  if (s.error) return;
+  power = s.power;
+
+  $('power').classList.toggle('on', power);
+  $('powerLabel').textContent = power ? 'POWER ON' : 'POWER OFF';
+
+  $('dotCam').classList.toggle('ok', power);
+  $('stCam').textContent = power ? 'LIVE' : 'OFF';
+  $('stFps').textContent = s.fps != null ? s.fps : '—';
+  $('stNpu').textContent = s.npu_percent >= 0 ? s.npu_percent + '%' : 'n/a';
+  $('stCpu').textContent = s.cpu_percent + '%';
+  $('stRam').textContent = s.ram_mb + ' MB';
+
+  $('tgBackground').checked = !!s.effects.background;
+  $('tgAutoframe').checked = !!s.effects.auto_frame;
+
+  $('mBlur').classList.toggle('active', s.mode === 'blur');
+  $('mReplace').classList.toggle('active', s.mode === 'replace');
+  $('mNone').classList.toggle('active', s.mode === 'none');
+  $('bgImageRow').style.display = s.mode === 'replace' ? 'block' : 'none';
+
+  if ($('blurRange') != document.activeElement) $('blurRange').value = s.blur;
+  $('blurVal').textContent = s.blur;
+
+  const tag = [];
+  if (s.effects.background) tag.push(s.mode.toUpperCase());
+  if (s.effects.auto_frame) tag.push('FRAMING');
+  $('procTag').textContent = tag.length ? '· ' + tag.join(' · ') : '';
+
+  setFeeds(power);
+}
+
+poll();
+setInterval(poll, 1500);
+</script>
 </body>
 </html>

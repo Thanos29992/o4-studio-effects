@@ -4,8 +4,11 @@ state/device.txt
 state/model.txt
 state/effect_*
 state/blur_strength
+state/bg_mode
+state/bg_image_path
 state/audiosr_preset
 state/realesrgan_q
+state/audio_source
 state/audio_source.txt
 state/volume
 state/offload
@@ -34,3 +37,22 @@ test_processed.wav
 
 # OpenVINO model cache
 /tmp/studio-effects-ov-cache
+
+# Python build artifacts
+__pycache__/
+*.pyc
+
+# Benchmark dataset — 545MB, download PPM-100 separately
+models/benchmark/PPM-100/
+models/benchmark/PPM-100.zip
+models/benchmark/ov_cache/
+
+# RVM build intermediates (models/rvm/build_ir.py regenerates the IR)
+models/rvm/*.onnx
+models/rvm/*.pth
+models/rvm/*.jpg
+models/rvm/rvm_src/
+models/rvm/npu_cache*/
+
+# Model archives (downloaded)
+models/deepfilternet3/*.tar.gz
