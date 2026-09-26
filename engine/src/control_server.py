@@ -41,7 +41,7 @@ EFFECT_MAP = {
 
 # auto-framing tunables: query key -> (config attr, caster, min, max, state file)
 AF_PARAMS = {
-    "smoothing":  ("smoothing_factor",     float, 0.005, 0.5, "af_smoothing"),
+    "smoothing":  ("smoothing_factor",     float, 0.005, 2.0, "af_smoothing"),
     "zoom":       ("zoom_margin",          float, 1.0,  3.0,  "af_zoom"),
     "interval":   ("detection_interval",   float, 0.2,  10.0, "af_interval"),
     "confidence": ("confidence_threshold", float, 0.1,  0.9,  "af_confidence"),
@@ -455,6 +455,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
         elif path == "/api/status":

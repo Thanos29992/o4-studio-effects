@@ -165,10 +165,10 @@
       <div class="af-grid">
         <div class="rng-row">
           <label>Smoothing <b id="afSmoothingVal">0.040</b></label>
-          <input type="range" min="0.005" max="0.5" step="0.005" id="afSmoothing"
+          <input type="range" min="0.005" max="2" step="0.005" id="afSmoothing"
                  oninput="$('afSmoothingVal').textContent=Number(this.value).toFixed(3)"
                  onchange="setAF('smoothing', this.value)">
-          <div class="hint">lower = slower graceful glide (0.005 ≈ 10s to settle) · higher = quicker</div>
+          <div class="hint">lower = slower graceful glide · higher = quicker · 1.0+ = instant snap</div>
         </div>
         <div class="rng-row">
           <label>Zoom margin <b id="afZoomVal">2.2</b></label>

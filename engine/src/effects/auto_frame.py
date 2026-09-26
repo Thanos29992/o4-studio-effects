@@ -173,7 +173,9 @@ class AutoFrameEffect(BaseEffect):
         Detection may poll once a second, but motion is eased per-frame,
         so the crop drifts smoothly instead of jumping at each detection.
         """
-        alpha = self.config.smoothing_factor
+        # EMA coefficient is capped at 1.0: above that the error term flips
+        # sign each frame (slider 1.0–2.0 = "instant snap", never overshoot)
+        alpha = min(self.config.smoothing_factor, 1.0)
         self._smooth_center_x += alpha * (self._target_center_x - self._smooth_center_x)
         self._smooth_center_y += alpha * (self._target_center_y - self._smooth_center_y)
         self._smooth_face_size += alpha * 0.5 * (self._target_face_size - self._smooth_face_size)
