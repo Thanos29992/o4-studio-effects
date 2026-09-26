@@ -1,0 +1,13 @@
+# FAST — snappy follow, funky feel. Face detect 0.1s poll ≈ 10% NPU.
+# Zero zoom tolerance: leans track immediately. Load via preset=fast
+name = "fast"
+
+[autoframe]
+smoothing = 0.215
+zoom = 2.45
+interval = 0.1
+confidence = 0.85
+headroom = 0.24
+transition = 0.25
+deadzone = 0.15
+szdeadzone = 0.0

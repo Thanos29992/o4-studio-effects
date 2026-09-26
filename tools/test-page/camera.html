@@ -123,6 +123,15 @@
   .af-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px 20px; }
   .af-grid .rng-row { margin-top: 6px; }
   .af-grid .hint { margin-top: 4px; font-size: 10px; }
+
+  /* preset buttons */
+  .pbtn {
+    font: inherit; font-size: 11px; font-weight: 700; padding: 5px 14px;
+    border-radius: 6px; cursor: pointer; background: var(--panel2);
+    color: var(--dim); border: 1px solid var(--border); transition: .15s;
+    letter-spacing: .5px;
+  }
+  .pbtn:hover { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
@@ -161,6 +170,13 @@
         <span class="name">Guides on RAW<small>HOLD = don't-move zone · CROP = what's taken · FACE = detector</small></span>
         <label class="switch"><input type="checkbox" id="tgGuides" checked
                onchange="setFeeds(power)"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row" style="border-bottom:1px solid #262626">
+        <span class="name">Presets<small>SLOW = gentle default · FAST = funky, ~10% NPU</small></span>
+        <span style="display:flex;gap:6px">
+          <button class="pbtn" onclick="setAF('preset','slow').then(poll)">SLOW</button>
+          <button class="pbtn" onclick="setAF('preset','fast').then(poll)">FAST</button>
+        </span>
       </div>
       <div class="af-grid">
         <div class="rng-row">
@@ -288,7 +304,7 @@ function togglePower() { api('/api/power?state=' + (power ? 'off' : 'on'), 'POST
 function setEffect(name, on) { api(`/api/effect?name=${name}&state=${on ? 'on' : 'off'}`, 'POST').then(poll); }
 function setMode(m) { api('/api/mode?value=' + m, 'POST').then(poll); }
 function setBlur(v) { api('/api/blur?value=' + v, 'POST'); }
-function setAF(k, v) { api('/api/autoframe?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); }); }
+function setAF(k, v) { return api('/api/autoframe?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); return r; }); }
 function setBgImage() {
   const p = $('bgImagePath').value.trim();
   if (p) api('/api/bgimage?path=' + encodeURIComponent(p), 'POST').then(r => {
