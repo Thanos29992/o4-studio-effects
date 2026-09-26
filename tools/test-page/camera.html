@@ -179,10 +179,10 @@
         </div>
         <div class="rng-row">
           <label>Detect every <b id="afIntervalVal">1.0</b> s</label>
-          <input type="range" min="0.2" max="10" step="0.1" id="afInterval"
+          <input type="range" min="0.1" max="10" step="0.1" id="afInterval"
                  oninput="$('afIntervalVal').textContent=Number(this.value).toFixed(1)"
                  onchange="setAF('interval', this.value)">
-          <div class="hint">CPU poll rate — 0.2–10s · motion stays smooth either way</div>
+          <div class="hint">NPU poll rate — 0.1–10s · motion stays smooth either way</div>
         </div>
         <div class="rng-row">
           <label>Face confidence <b id="afConfidenceVal">0.50</b></label>
@@ -200,7 +200,7 @@
         </div>
         <div class="rng-row">
           <label>Transition <b id="afTransitionVal">0.05</b></label>
-          <input type="range" min="0.01" max="0.2" step="0.01" id="afTransition"
+          <input type="range" min="0.01" max="1" step="0.01" id="afTransition"
                  oninput="$('afTransitionVal').textContent=this.value"
                  onchange="setAF('transition', this.value)">
           <div class="hint">zoom in/out fade speed on toggle</div>

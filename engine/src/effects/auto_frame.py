@@ -49,6 +49,9 @@ class AutoFrameEffect(BaseEffect):
         self._smooth_center_y = 0.5
         self._smooth_face_size = 0.15
         self._initialized = False
+        # consecutive polls seen outside the deadzone (debounce: only a
+        # sustained excursion moves the target, single noisy detections don't)
+        self._outside_streak = 0
         self._zoom_level = 1.0 if config.enabled else 0.0
         self._transitioning = False
         # latest RAW detection bbox (for guides) and last computed crop rectangle
@@ -116,6 +119,7 @@ class AutoFrameEffect(BaseEffect):
         """Store the latest detection as the target pose (runs at poll rate)."""
         if not faces:
             self._last_raw_face = None
+            self._outside_streak = 0
             return
 
         if len(faces) == 1:
@@ -157,7 +161,17 @@ class AutoFrameEffect(BaseEffect):
                         abs(target_cy - self._target_center_y) < dy_limit
         within_size = rel_size < self.config.size_deadzone
         if within_center and within_size:
+            self._outside_streak = 0
             return
+
+        # debounce: the excursion must survive TWO consecutive polls before
+        # the target moves. Without this, detector noise right at the
+        # deadzone edge nudges the target back and forth each poll, and the
+        # chase shows up as a slight vibration at the tail of every shift.
+        self._outside_streak += 1
+        if self._outside_streak < 2:
+            return
+        self._outside_streak = 0
 
         # poll-rate temporal filter: detector boxes jitter a few % between
         # polls; take 60% of each measurement so accepted targets glide instead
@@ -176,9 +190,19 @@ class AutoFrameEffect(BaseEffect):
         # EMA coefficient is capped at 1.0: above that the error term flips
         # sign each frame (slider 1.0–2.0 = "instant snap", never overshoot)
         alpha = min(self.config.smoothing_factor, 1.0)
-        self._smooth_center_x += alpha * (self._target_center_x - self._smooth_center_x)
-        self._smooth_center_y += alpha * (self._target_center_y - self._smooth_center_y)
-        self._smooth_face_size += alpha * 0.5 * (self._target_face_size - self._smooth_face_size)
+
+        # tail snap: exponential ease never quite reaches the target, so the
+        # last sub-pixel creep + integer crop rounding flickers at the end of
+        # every glide (the "slight vibration"). Snap the final <1px instead.
+        def ease(sm: float, tg: float, rate: float) -> float:
+            d = tg - sm
+            if abs(d) < 0.002:  # ≈1px at 480p
+                return tg
+            return sm + rate * d
+
+        self._smooth_center_x = ease(self._smooth_center_x, self._target_center_x, alpha)
+        self._smooth_center_y = ease(self._smooth_center_y, self._target_center_y, alpha)
+        self._smooth_face_size = ease(self._smooth_face_size, self._target_face_size, alpha * 0.5)
 
     @BaseEffect.enabled.setter
     def enabled(self, value: bool) -> None:
