@@ -291,11 +291,25 @@ class EngineController:
                             for web_key, (attr, *_rest) in AF_PARAMS.items()
                         }
                 fps = getattr(pipeline, "fps", None)
+            else:
+                # powered off: report persisted toggle state so the console
+                # matches what will be applied on next power-on
+                effects_state = {
+                    "background": _read_state("effect_modnet", "off") == "on",
+                    "auto_frame": _read_state("effect_face-adas", "off") == "on",
+                }
 
         if af_live is None:
             # powered off: report state-file values (fall back to config defaults)
             from src.config import load_config
             af_cfg = load_config().effects.auto_frame
+            for attr, caster, lo, hi, state_name in AF_PARAMS.values():
+                raw = _read_state(state_name, "")
+                if raw:
+                    try:
+                        setattr(af_cfg, attr, max(lo, min(hi, caster(raw))))
+                    except ValueError:
+                        pass
             af_live = {
                 web_key: getattr(af_cfg, attr)
                 for web_key, (attr, *_rest) in AF_PARAMS.items()
@@ -357,10 +371,13 @@ def _draw_guides(frame, info: dict):
     dz = float(info.get("deadzone", 0.08))
 
     tx, ty, ts = info.get("target", (0.5, 0.5, 0.15))
-    hx1 = max(0, int(round((tx - dz) * w)))
-    hy1 = max(0, int(round((ty - dz) * h)))
-    hx2 = min(w, int(round((tx + dz) * w)))
-    hy2 = min(h, int(round((ty + dz) * h)))
+    # portrait hold box: height = 2*dz*h px, width = 0.75 * height (3:4 face shape)
+    x_half = dz * 0.75 * h
+    y_half = dz * h
+    hx1 = max(0, int(round(tx * w - x_half)))
+    hy1 = max(0, int(round(ty * h - y_half)))
+    hx2 = min(w, int(round(tx * w + x_half)))
+    hy2 = min(h, int(round(ty * h + y_half)))
     cv2.rectangle(img, (hx1, hy1), (hx2, hy2), (0, 255, 0), 2)
     cv2.putText(img, "HOLD", (hx1, max(14, hy1 - 6)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)

@@ -47,7 +47,7 @@ class AutoFrameConfig:
     confidence_threshold: float = 0.5
     headroom: float = 0.18
     transition_speed: float = 0.05
-    deadzone: float = 0.08  # face center within this radius of held pose -> hold (no recenter)
+    deadzone: float = 0.08  # portrait 3:4 hold-box height (fraction of frame h) -> hold
     size_deadzone: float = 0.15  # relative face-size change below this -> hold (no zoom)
 
 

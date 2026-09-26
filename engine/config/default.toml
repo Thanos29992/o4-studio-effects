@@ -27,5 +27,5 @@ detection_interval = 1.0  # seconds between face detections (CPU poll rate)
 confidence_threshold = 0.5
 headroom = 0.18  # empty space above head in crop (fraction of crop height)
 transition_speed = 0.05  # zoom in/out fade speed
-deadzone = 0.08  # center tolerance: small drift is "still centered" -> hold
+deadzone = 0.08  # center tolerance as portrait 3:4 box height (faces are vertical)
 size_deadzone = 0.15  # zoom tolerance: small forward/back shifts are ignored

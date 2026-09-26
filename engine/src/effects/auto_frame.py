@@ -54,15 +54,21 @@ class AutoFrameEffect(BaseEffect):
         # latest RAW detection bbox (for guides) and last computed crop rectangle
         self._last_raw_face: tuple[float, float, float, float] | None = None
         self._last_crop: tuple[int, int, int, int] | None = None
+        self._frame_w = 640
+        self._frame_h = 480
 
     def setup(self) -> None:
         self._download_model_if_needed()
 
+        # NPU flip: no device override -> ModelManager prefers NPU (with
+        # automatic CPU fallback on compile failure). Face detect polls once
+        # per detection_interval, so the shared NPU queue with RVM barely
+        # notices it.
         self._compiled_model = self.model_manager.compile_model(
             model_path=MODEL_XML,
             model_name=MODEL_NAME,
-            device="CPU",
         )
+        logger.info("Face detection compiled (NPU-preferred, CPU fallback)")
         self._infer_request = self._compiled_model.create_infer_request()
 
         input_layer = self._compiled_model.input(0)
@@ -139,10 +145,16 @@ class AutoFrameEffect(BaseEffect):
 
         # deadzone: drift inside the tolerance band means "still centered /
         # still same distance" -> hold the current pose (no micro-corrections,
-        # no wobble). Only a genuine reposition moves the target.
+        # no wobble). The band is a PORTRAIT box (3:4 w:h) — faces are
+        # vertical, so allow more head bob than left/right drift.
+        # slider value = box height as a fraction of frame height;
+        # box width = height * 0.75 (converted to width-normalized units).
+        dz = self.config.deadzone
+        dx_limit = dz * 0.75 * self._frame_h / max(self._frame_w, 1)
+        dy_limit = dz
         rel_size = abs(target_size - self._target_face_size) / max(self._target_face_size, 1e-3)
-        within_center = abs(target_cx - self._target_center_x) < self.config.deadzone and \
-                        abs(target_cy - self._target_center_y) < self.config.deadzone
+        within_center = abs(target_cx - self._target_center_x) < dx_limit and \
+                        abs(target_cy - self._target_center_y) < dy_limit
         within_size = rel_size < self.config.size_deadzone
         if within_center and within_size:
             return
@@ -188,6 +200,7 @@ class AutoFrameEffect(BaseEffect):
             now = time.monotonic()
             if now - self._last_detect >= self.config.detection_interval:
                 self._last_detect = now
+                self._frame_h, self._frame_w = frame.shape[:2]
                 faces = self._detect_faces(frame)
                 self._update_target(faces)
             # ease the crop toward the target every frame -> smooth motion
