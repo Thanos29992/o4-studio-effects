@@ -35,3 +35,7 @@ headroom = 0.24  # empty space above head in crop (fraction of crop height)
 transition_speed = 0.25  # zoom in/out fade speed
 deadzone = 0.22  # center tolerance as portrait 3:4 box height (faces are vertical)
 size_deadzone = 0.15  # zoom tolerance: small forward/back shifts are ignored
+
+[effects.enhance]
+enabled = false
+strength = 0.7  # 0=off, 1=full enhanced (SR-as-enhancement: denoise+deblur+sharpen)

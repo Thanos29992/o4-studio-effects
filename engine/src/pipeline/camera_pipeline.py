@@ -12,6 +12,7 @@ from src.config import AppConfig
 from src.effects.auto_frame import AutoFrameEffect
 from src.effects.background import BackgroundEffect
 from src.effects.base import BaseEffect
+from src.effects.enhance import EnhanceEffect
 from src.models.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
@@ -50,8 +51,10 @@ class CameraPipeline:
 
         background_effect = BackgroundEffect(self._model_manager, self.config.effects.background)
         auto_frame_effect = AutoFrameEffect(self._model_manager, self.config.effects.auto_frame)
+        enhance_effect = EnhanceEffect(self._model_manager, self.config.effects.enhance)
 
-        self._effects = [background_effect, auto_frame_effect]
+        # Order: Enhance FIRST (clean input), then Background, then Auto-Frame
+        self._effects = [enhance_effect, background_effect, auto_frame_effect]
 
         for effect in self._effects:
             effect.setup()

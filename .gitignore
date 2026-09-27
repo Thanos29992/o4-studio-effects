@@ -58,3 +58,4 @@ models/rvm/npu_cache*/
 
 # Model archives (downloaded)
 models/deepfilternet3/*.tar.gz
+state/enhance_strength

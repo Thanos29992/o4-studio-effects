@@ -57,9 +57,16 @@ class AutoFrameConfig:
 
 
 @dataclass
+class EnhanceConfig:
+    enabled: bool = False
+    strength: float = 0.7  # 0=off, 1=full enhanced
+
+
+@dataclass
 class EffectsConfig:
     background: BackgroundConfig = field(default_factory=BackgroundConfig)
     auto_frame: AutoFrameConfig = field(default_factory=AutoFrameConfig)
+    enhance: EnhanceConfig = field(default_factory=EnhanceConfig)
 
 
 @dataclass
@@ -90,5 +97,6 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         effects=EffectsConfig(
             background=BackgroundConfig(**effects_raw.get("background", {})),
             auto_frame=AutoFrameConfig(**effects_raw.get("auto_frame", {})),
+            enhance=EnhanceConfig(**effects_raw.get("enhance", {})),
         ),
     )

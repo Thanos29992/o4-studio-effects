@@ -37,6 +37,7 @@ NPU_BUSY_PATH = Path("/sys/devices/pci0000:00/0000:00:0b.0/npu_busy_time_us")
 EFFECT_MAP = {
     "background": "modnet",
     "auto_frame": "face-adas",
+    "enhance": "realesrgan-x4",
 }
 
 # auto-framing tunables: query key -> (config attr, caster, min, max, state file)
@@ -57,6 +58,11 @@ BG_PARAMS = {
     "floor":    ("matte_floor",    float, 0.0,  0.35, "bg_floor"),
     "gamma":    ("matte_gamma",    float, 0.5,  2.0,  "bg_gamma"),
     "temporal": ("matte_temporal", float, 0.0,  0.95, "bg_temporal"),
+}
+
+# enhancement tunables (strength 0..1)
+ENHANCE_PARAMS = {
+    "strength": ("strength", float, 0.0, 1.0, "enhance_strength"),
 }
 
 # JS/CSS assets are inlined in camera.html; nothing else to serve.
@@ -149,6 +155,16 @@ class EngineController:
         bg_image = _read_state("bg_image_path", "")
         if bg_image:
             config.effects.background.background_image = bg_image
+
+        # enhancement tunables
+        en = config.effects.enhance
+        for attr, caster, lo, hi, state_name in ENHANCE_PARAMS.values():
+            raw = _read_state(state_name, "")
+            if raw:
+                try:
+                    setattr(en, attr, max(lo, min(hi, caster(raw))))
+                except ValueError:
+                    pass
 
         # auto-framing tunables (live-tuned values persist across power cycles)
         af = config.effects.auto_frame
@@ -283,6 +299,36 @@ class EngineController:
             out["unknown"] = unknown
         return out
 
+    def set_enhance(self, params: dict[str, str]) -> dict:
+        """Update enhancement tunables (subset of ENHANCE_PARAMS keys).
+
+        Same contract: clamp, persist to state/, apply live.
+        """
+        applied: dict[str, float | int] = {}
+        unknown = [k for k in params if k not in ENHANCE_PARAMS]
+        for key, raw in params.items():
+            spec = ENHANCE_PARAMS.get(key)
+            if spec is None:
+                continue
+            attr, caster, lo, hi, state_name = spec
+            try:
+                value = caster(float(raw))
+            except ValueError:
+                continue
+            value = max(lo, min(hi, value))
+            _write_state(state_name, str(value))
+            applied[key] = value
+            with self._lock:
+                pipeline = self._pipeline
+                if pipeline is not None:
+                    for effect in pipeline.get_effects():
+                        if type(effect).__name__ == "EnhanceEffect":
+                            effect.set_strength(value)
+        out: dict = {"ok": bool(applied), "applied": applied}
+        if unknown:
+            out["unknown"] = unknown
+        return out
+
     def set_blur(self, value: int) -> dict:
         value = max(1, min(99, value))
         _write_state("blur_strength", str(value))
@@ -356,10 +402,12 @@ class EngineController:
             mode = None
             af_live = None
             bg_live = None
+            en_live = None
             if pipeline is not None:
                 for effect in pipeline.get_effects():
                     key = {"BackgroundEffect": "background",
-                           "AutoFrameEffect": "auto_frame"}.get(type(effect).__name__)
+                           "AutoFrameEffect": "auto_frame",
+                           "EnhanceEffect": "enhance"}.get(type(effect).__name__)
                     if key:
                         effects_state[key] = bool(effect.enabled)
                     if type(effect).__name__ == "BackgroundEffect":
@@ -372,6 +420,11 @@ class EngineController:
                         af_live = {
                             web_key: getattr(effect.config, attr)
                             for web_key, (attr, *_rest) in AF_PARAMS.items()
+                        }
+                    if type(effect).__name__ == "EnhanceEffect":
+                        en_live = {
+                            web_key: getattr(effect.config, attr)
+                            for web_key, (attr, *_rest) in ENHANCE_PARAMS.items()
                         }
                 fps = getattr(pipeline, "fps", None)
             else:
@@ -388,7 +441,8 @@ class EngineController:
             cfg = load_config()
             af_cfg = cfg.effects.auto_frame
             bg_cfg = cfg.effects.background
-            for params, target in ((AF_PARAMS, af_cfg), (BG_PARAMS, bg_cfg)):
+            en_cfg = cfg.effects.enhance
+            for params, target in ((AF_PARAMS, af_cfg), (BG_PARAMS, bg_cfg), (ENHANCE_PARAMS, en_cfg)):
                 for attr, caster, lo, hi, state_name in params.values():
                     raw = _read_state(state_name, "")
                     if raw:
@@ -404,6 +458,12 @@ class EngineController:
                 web_key: getattr(bg_cfg, attr)
                 for web_key, (attr, *_rest) in BG_PARAMS.items()
             }
+            en_live = {
+                web_key: getattr(en_cfg, attr)
+                for web_key, (attr, *_rest) in ENHANCE_PARAMS.items()
+            }
+
+        effects_state.setdefault("enhance", _read_state("effect_realesrgan-x4", "off") == "on")
 
         proc = psutil.Process()
         return {
@@ -413,6 +473,7 @@ class EngineController:
             "mode": mode or _read_state("bg_mode", "blur"),
             "autoframe": af_live,
             "bgparam": bg_live,
+            "enhance": en_live,
             "fps": round(fps, 1) if fps else None,
             "npu_percent": self._npu_percent(),
             "cpu_percent": round(proc.cpu_percent(interval=0.0) / (os.cpu_count() or 1), 1),
@@ -588,6 +649,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "need value=0..100"}, 400)
                 return
             self._json(_controller.set_blur(value))
+        elif parsed.path == "/api/enhance":
+            self._json(_controller.set_enhance(q))
         elif parsed.path == "/api/mode":
             self._json(_controller.set_mode(q.get("value", "")))
         elif parsed.path == "/api/bgimage":

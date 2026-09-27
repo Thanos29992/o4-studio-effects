@@ -151,6 +151,10 @@
     <div class="card">
       <h2>Effects</h2>
       <div class="toggle-row">
+        <span class="name">Enhancement<small>AI denoise+deblur+sharpen (SR-as-enhancement)</small></span>
+        <label class="switch"><input type="checkbox" id="tgEnhance" onchange="setEffect('enhance', this.checked)"><span class="slider"></span></label>
+      </div>
+      <div class="toggle-row">
         <span class="name">Background<small>blur your backdrop</small></span>
         <label class="switch"><input type="checkbox" id="tgBackground" onchange="setEffect('background', this.checked)"><span class="slider"></span></label>
       </div>
@@ -161,7 +165,15 @@
     </div>
 
     <div class="card">
-      <h2>Background Blur</h2>
+      <h2>Image Enhancement</h2>
+      <div class="rng-row" style="margin-top:0">
+        <label>Strength <b id="enhanceVal">0.70</b></label>
+        <input type="range" min="0" max="1" step="0.05" value="0.7" id="enhanceRange"
+               oninput="document.getElementById('enhanceVal').textContent=Number(this.value).toFixed(2)"
+               onchange="setEnhance(this.value)">
+      </div>
+      <div class="hint">SR-as-enhancement: runs Real-ESRGAN general x4v3 at 320×180→720p. Denoises, deburs, sharpens, de-artifacts. 0 = off, 1 = full enhanced.</div>
+    </div>
       <div class="rng-row" style="margin-top:0">
         <label>Blur strength <b id="blurVal">50</b></label>
         <input type="range" min="5" max="95" step="2" value="50" id="blurRange"
@@ -205,6 +217,7 @@ function togglePower() { api('/api/power?state=' + (power ? 'off' : 'on'), 'POST
 function setEffect(name, on) { api(`/api/effect?name=${name}&state=${on ? 'on' : 'off'}`, 'POST').then(poll); }
 function setBlur(v) { api('/api/blur?value=' + v, 'POST'); }
 function setAF(k, v) { return api('/api/autoframe?' + k + '=' + encodeURIComponent(v), 'POST').then(r => { if (r.ok === false) alert(r.error || 'failed'); return r; }); }
+function setEnhance(v) { api('/api/enhance?strength=' + v, 'POST'); }
 
 function setFeeds(on) {
   const raw = $('rawFeed'), proc = $('procFeed');
@@ -238,9 +251,16 @@ async function poll() {
 
   $('tgBackground').checked = !!s.effects.background;
   $('tgAutoframe').checked = !!s.effects.auto_frame;
+  $('tgEnhance').checked = !!s.effects.enhance;
 
   if ($('blurRange') != document.activeElement) $('blurRange').value = s.blur;
   $('blurVal').textContent = s.blur;
+
+  if ($('enhanceRange') != document.activeElement) {
+    const en = s.enhance;
+    if (en && en.strength != null) $('enhanceRange').value = en.strength;
+    $('enhanceVal').textContent = en?.strength != null ? Number(en.strength).toFixed(2) : '0.70';
+  }
 
   const af = s.autoframe;
   if (af) {
@@ -251,6 +271,7 @@ async function poll() {
   }
 
   const tag = [];
+  if (s.effects.enhance) tag.push('ENHANCE');
   if (s.effects.background) tag.push('BLUR');
   if (s.effects.auto_frame) tag.push('FRAMING');
   $('procTag').textContent = tag.length ? '· ' + tag.join(' · ') : '';
